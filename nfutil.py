@@ -1020,7 +1020,7 @@ def test_orientations_at_coordinates(experiment,controller,image_stack,orientati
         spacing = experiment.misorientation_step_rad # This is the spacing between orientations
         ori_pts = np.arange(-mis_amt, (mis_amt+(spacing*0.999)),spacing) # Create a linup of the orientations to go on either side
         n_oris_refine = ori_pts.shape[0]**3
-        print('Since you are refining ')
+        print(f'You will be refining with {n_oris_refine} orientations centered around the centroid orientation.')
 
     # What senario do we have?
     if ncpus == 1 or (n_oris == 1 and n_coords == 1):
@@ -2990,6 +2990,26 @@ the first image is still the 'goodstart' as defined in the par file.")
     assert np.all(f_id[1:] - f_id[:-1] >= 0), "files are out of order"
 
     return files, num_imgs_per_scan
+
+def generate_image_locations(configuration):
+    # Pull data from config
+    num_images_per_folder = configuration.images.loading.nframes
+    img_stem = configuration.images.loading.stem
+    num_digits = configuration.images.loading.num_digits
+    raw_data_path = configuration.images.loading.sample_raw_data_folder
+    folders = configuration.images.loading.data_folders
+    goodstarts = configuration.images.loading.goodstarts
+
+    num_folders = len(folders)
+    filenames = [None]*(num_images_per_folder*num_folders)
+    img = 0
+    for folder in np.arange(num_folders):
+        for folder_img in np.arange(num_images_per_folder):
+            filenames[img] = f'{raw_data_path}/{folders[folder]}/nf/{img_stem}{str(goodstarts[folder]+folder_img).zfill(num_digits)}.tif'
+            img = img + 1
+
+    return filenames, num_images_per_folder*num_folders
+
 
 # Omega generator function
 def generate_omega_edges(meta_df,num_imgs_per_scan):

@@ -83,10 +83,10 @@ import matplotlib
 # %matplotlib qt
 import matplotlib.pyplot as plt
 
-# %% ==============================================================================
+# %% ===========================================================================
 # FILES TO LOAD -CAN BE EDITED
 # ==============================================================================
-configuration_filepath = '/nfs/chess/user/seg246/software/development/nf_config.yml'
+configuration_filepath = '/nfs/chess/aux/reduced_data/cycles/2023-3/id3a/pagan-3807-a/in718ln/reconstructions/nf/1/nf_config.yml'
 
 # %% ==========================================================================
 # LOAD IMAGES AND EXPERIMENT - DO NOT EDIT
@@ -98,13 +98,15 @@ experiment, image_stack = nfutil.generate_experiment(configuration)
 # Generate the controller
 controller = nfutil.build_controller(configuration)
 
+experiment.ome_edges = experiment.ome_edges + (-0.1)*np.pi/180
+
 # %% ==========================================================================
 # CALIBRATE THE TRANSLATIONS - CAN BE EDITED
 #==============================================================================
-parameter = 2 # 0=X, 1=Y, 2=Z, 3=RX, 4=RY, 5=RZ, 6=chi
-start = -5.7 # mm for translations, degrees for rotations
-stop = -5.3 # mm for translations, degrees for rotations
-steps = 5 # If set to 0, the current experiment will be tested, if 1 it will use the start value
+parameter = 1 # 0=X, 1=Y, 2=Z, 3=RX, 4=RY, 5=RZ, 6=chi
+start = 1.571 # mm for translations, degrees for rotations
+stop = 1.521 # mm for translations, degrees for rotations
+steps = 1 # If set to 0, the current experiment will be tested, if 1 it will use the start value
 calibration_parameters = [parameter,steps,start,stop]
 experiment = nfutil.calibrate_parameter(experiment,controller,image_stack,calibration_parameters)
 

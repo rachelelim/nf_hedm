@@ -43,7 +43,7 @@ import nf_config
 # the import ipywidgets as widgets line is not needed - however, you do need to run a pip install ipywidgets
 # the import ipympl line is not needed - however, you do need to run a pip install ipympl
 #import ipywidgets as widgets
-#import ipympl 
+#import ipympl 24
 import matplotlib
 # The next lines are formatted correctly, no matter what your IDE says
 # For inline, interactive plots (if you use these, make sure to run a plt.close() to prevent crashing)
@@ -57,7 +57,7 @@ import matplotlib.pyplot as plt
 # USER INPUT - CAN BE EDITED
 # ==============================================================================
 # What is the file path to the configuration file?
-configuration_filepath = '/nfs/chess/user/seg246/software/development/nf_config.yml'
+configuration_filepath = '/nfs/chess/aux/reduced_data/cycles/2023-3/id3a/pagan-3807-a/in718ln/reconstructions/nf/1/nf_config.yml'
 
 # %% ===========================================================================
 # LOAD CONFIGURATION - DO NOT EDIT
@@ -66,20 +66,23 @@ configuration_filepath = '/nfs/chess/user/seg246/software/development/nf_config.
 configuration = nf_config.open_file(configuration_filepath)[0]
 
 # Comb the nf folder for metadata files (.json and .par) and compile them
-all_meta = nfutil.skim_metadata(configuration)
+# all_meta = nfutil.skim_metadata(configuration)
 
 # Find the folders associated with this z_height 
-unique_zheights = np.sort(all_meta[configuration.images.loading.vertical_motor_name].unique())
-meta = all_meta[np.round(all_meta[configuration.images.loading.vertical_motor_name],5) == configuration.images.loading.target_vertical_position]
-
-# Manually downselect if needed
-meta = meta[:4]
+# unique_zheights = np.sort(all_meta[configuration.images.loading.vertical_motor_name].unique())
+# meta = all_meta[np.round(all_meta[configuration.images.loading.vertical_motor_name],5) == configuration.images.loading.target_vertical_position]
 
 # Grab the array of per-frame omega values and file locations
-filenames,num_imgs = nfutil.skim_image_locations(meta, configuration.images.loading.sample_raw_data_folder)
+# filenames,num_imgs = nfutil.skim_image_locations(meta, configuration.images.loading.sample_raw_data_folder)
+filenames,num_imgs = nfutil.generate_image_locations(configuration)
+
+# filenames = filenames[0:150]
+# num_imgs = 150
 
 # Generate the omega edges from the .par file information
-omegas,omega_edges_deg = nfutil.generate_omega_edges(meta,num_imgs)
+# omegas,omega_edges_deg = nfutil.generate_omega_edges(meta,num_imgs)
+omega_edges_deg = np.linspace(configuration.experiment.omega_start,configuration.experiment.omega_stop,num_imgs+1)
+omegas = omega_edges_deg[:-1]
 
 # %% ===========================================================================
 # LOAD IMAGES - DO NOT EDIT
@@ -127,9 +130,9 @@ cleaned_image_stack = nfutil.remove_median_darkfields(raw_image_stack,controller
 # ==============================================================================
 if configuration.output_plot_check:
     fig, axs = plt.subplots(1,2)
-    img_num = 110
+    img_num = 100
     axs[0].imshow(raw_image_stack[img_num,:,:],interpolation='none',clim=[0, 50],cmap='bone')
-    axs[1].imshow(cleaned_image_stack[img_num,:,:],interpolation='none',clim=[0, 40],cmap='bone')
+    axs[1].imshow(cleaned_image_stack[img_num,:,:],interpolation='none',clim=[0, 20],cmap='bone')
     axs[0].title.set_text('Raw Image: ' + str(img_num))
     axs[1].title.set_text('Cleaned Image: ' + str(img_num))
     plt.show(block=False)
@@ -145,7 +148,7 @@ binarized_image_stack = nfutil.filter_and_binarize_images(cleaned_image_stack,co
 if configuration.output_plot_check:
     fig, axs = plt.subplots(1,2)
     img_num = 100
-    axs[0].imshow(cleaned_image_stack[img_num,:,:],interpolation='none',clim=[0, 10],cmap='bone')
+    axs[0].imshow(raw_image_stack[img_num,:,:],interpolation='none',clim=[10, 50],cmap='bone')
     axs[1].imshow(binarized_image_stack[img_num,:,:],interpolation='none',clim=[0, 1],cmap='bone')
     axs[0].title.set_text('Cleaned Image: ' + str(img_num))
     axs[1].title.set_text('Binarized Image: ' + str(img_num))
@@ -182,16 +185,16 @@ nfutil.save_image_stack(configuration,dilated_image_stack,omega_edges_deg)
 # This is only needed when using the Multilayer optic or the 2x lens
 # If neither of these apply, skip this
 num_img_for_median = 50
-binarization_threshold = 20
+binarization_threshold = 19.0
 errosions = 10
 dilations = 10
 feature_size_to_remove = 10000
 beamstop_mask = nfutil.make_beamstop_mask(raw_image_stack,num_img_for_median,binarization_threshold,errosions,dilations,feature_size_to_remove)
 
 plt.figure()
-plt.imshow(beamstop_mask,interpolation=None,clim=[0,20])
+plt.imshow(beamstop_mask,interpolation=None,clim=[0,1])
 plt.show()
-
+# %% 
 print(f'Saving beam stop mask to: {configuration.output_directory}')
 np.save(configuration.output_directory + os.sep + configuration.analysis_name + '_beamstop_mask.npy', beamstop_mask)
 
