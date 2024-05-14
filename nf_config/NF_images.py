@@ -47,7 +47,7 @@ class LoadingConfig(Config):
 
     @property
     def num_digits(self):
-        return self._cfg.get('NF_images:image_loading:num_digits')
+        return self._cfg.get('NF_images:image_loading:stem_digits')
 
     @property
     def img_start(self):
@@ -55,7 +55,15 @@ class LoadingConfig(Config):
 
     @property
     def nframes(self):
-        return self._cfg.get('NF_images:image_loading:nframes', 1440)
+        return self._cfg.get('NF_images:image_loading:nframes_per_folder', 1440)
+    
+    @property
+    def data_folders(self):
+        return self._cfg.get('NF_images:image_loading:data_folders')
+    
+    @property
+    def goodstarts(self):
+        return self._cfg.get('NF_images:image_loading:goodstarts')
 
 class ProcessingConfig(Config):
 

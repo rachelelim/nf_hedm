@@ -65,6 +65,7 @@ import os
 
 # Hexrd imports
 import nfutil as nfutil
+import nf_config
 
 # Matplotlib
 # This is to allow interactivity of inline plots in your gui
