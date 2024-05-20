@@ -76,21 +76,17 @@ import nf_config
 import matplotlib
 # The next lines are formatted correctly, no matter what your IDE says
 # For inline, interactive plots (if you use these, make sure to run a plt.close() to prevent crashing)
-%matplotlib widget
+# %matplotlib widget
 # For inline, non-interactive plots
 # %matplotlib inline
 # For pop out, interactive plots (cannot be used with an SSH tunnel)
 # %matplotlib qt
 import matplotlib.pyplot as plt
 
-import importlib
-importlib.reload(nfutil) # This reloads the file if you made changes to it
-
-
 # %% ==============================================================================
 # FILES TO LOAD -CAN BE EDITED
 # ==============================================================================
-configuration_filepath = '/nfs/chess/user/seg246/software/development/nf_config.yml'
+configuration_filepath = '/nfs/chess/aux/reduced_data/cycles/2023-3/id3a/pagan-3807-a/in718ln/reconstructions/nf/1/nf_config.yml'
 
 # %% ==========================================================================
 # LOAD IMAGES AND EXPERIMENT - DO NOT EDIT
@@ -121,19 +117,12 @@ grain_map, confidence_map, misorientation_map = nfutil.process_raw_data(raw_conf
 # Show Images - CAN BE EDITED
 # =============================================================================
 layer_num = 0 # Which layer in Y?
-conf_thresh = 0.4 # If set to None no threshold is used
+conf_thresh = 0.6 # If set to None no threshold is used
 nfutil.plot_ori_map(grain_map, confidence_map, Xs, Zs, experiment.exp_maps, 
-                    layer_num,experiment.mat[experiment.material_name],experiment.remap,conf_thresh)
+                    layer_num,experiment.mat[experiment.material_name],
+                    experiment.remap,conf_thresh,misorientation_map=misorientation_map)
 # Quick note - nfutil assumes that the IPF reference vector is [0 1 0]
-# Print out the average and max confidence
-print('The average confidence map value is: ' + str(np.mean(confidence_map)) +'\n'+
-    'The maximum confidence map value is : ' + str(np.max(confidence_map)))
 
-plt.figure()
-plt.imshow(misorientation_map[0,:,:],cmap='jet')
-plt.title('Misorientation (deg)')
-plt.colorbar()
-plt.show()
 # %% ==========================================================================
 # SAVE PROCESSED GRAIN MAP DATA - CAN BE EDITED
 # =============================================================================

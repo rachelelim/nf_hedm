@@ -1847,7 +1847,7 @@ def generate_ori_map(grain_map, exp_maps,mat,id_remap=None):
 
 # An IPF and confidence map plotter
 def plot_ori_map(grain_map, confidence_map, Xs, Zs, exp_maps, 
-                 layer_no,mat,id_remap=None, conf_thresh=None):
+                 layer_no,mat,id_remap=None, conf_thresh=None,misorientation_map=None):
     # Init
     grains_plot=np.squeeze(grain_map[layer_no,:,:])
     conf_plot=np.squeeze(confidence_map[layer_no,:,:])
@@ -1911,13 +1911,26 @@ def plot_ori_map(grain_map, confidence_map, Xs, Zs, exp_maps,
         axs[1,0].set_xlabel('Z Position')
         axs[1,0].set_ylabel('X Position')
         plt.colorbar(ax3)
-        # Plot Filler Plot
-        ax4 = axs[1,1].imshow(np.zeros(np.shape(conf_plot)),interpolation='none')
-        axs[1,1].title.set_text('Filler')
-        axs[1,1].set_xticks(no_axis,labels=np.round(x_axis,2), rotation='vertical')
-        axs[1,1].set_yticks(no_axis,labels=np.round(z_axis,2), rotation='horizontal')
-        axs[1,1].set_xlabel('Z Position')
-        axs[1,1].set_ylabel('X Position')
+        print('The average confidence map value is: ' + str(np.mean(conf_plot[conf_plot>0])) +'\n'+
+                'The maximum confidence map value is : ' + str(np.max(conf_plot)))
+
+        # Plot Misorientation or Filler Plot
+        if misorientation_map is None:
+            ax4 = axs[1,1].imshow(np.zeros(np.shape(conf_plot)),interpolation='none')
+            axs[1,1].title.set_text('Filler')
+            axs[1,1].set_xticks(no_axis,labels=np.round(x_axis,2), rotation='vertical')
+            axs[1,1].set_yticks(no_axis,labels=np.round(z_axis,2), rotation='horizontal')
+            axs[1,1].set_xlabel('Z Position')
+            axs[1,1].set_ylabel('X Position')
+        else:
+            misorientation_plot=np.squeeze(misorientation_map[layer_no,:,:])
+            misorientation_plot = np.multiply(misorientation_plot,mask)
+            ax4 = axs[1,1].imshow(misorientation_plot,interpolation='none',cmap='jet')
+            axs[1,1].title.set_text('Misorientation off Provided Grains.out Orientation')
+            axs[1,1].set_xticks(no_axis,labels=np.round(x_axis,2), rotation='vertical')
+            axs[1,1].set_yticks(no_axis,labels=np.round(z_axis,2), rotation='horizontal')
+            axs[1,1].set_xlabel('Z Position')
+            axs[1,1].set_ylabel('X Position')
         # Wrap up
         plt.show()
     else:
@@ -1947,13 +1960,24 @@ def plot_ori_map(grain_map, confidence_map, Xs, Zs, exp_maps,
         axs[1,0].set_xlabel('Z Position')
         axs[1,0].set_ylabel('X Position')
         plt.colorbar(ax3)
-        # Plot Filler Plot
-        ax4 = axs[1,1].imshow(np.zeros(np.shape(conf_plot)),interpolation='none')
-        axs[1,1].title.set_text('Filler')
-        axs[1,1].set_xticks(no_axis,labels=np.round(x_axis,2), rotation='vertical')
-        axs[1,1].set_yticks(no_axis,labels=np.round(z_axis,2), rotation='horizontal')
-        axs[1,1].set_xlabel('Z Position')
-        axs[1,1].set_ylabel('X Position')
+        print('The average confidence map value is: ' + str(np.mean(conf_plot)) +'\n'+
+        'The maximum confidence map value is : ' + str(np.max(conf_plot)))
+        # Plot Misorientation or Filler Plot
+        if misorientation_map is None:
+            ax4 = axs[1,1].imshow(np.zeros(np.shape(conf_plot)),interpolation='none')
+            axs[1,1].title.set_text('Filler')
+            axs[1,1].set_xticks(no_axis,labels=np.round(x_axis,2), rotation='vertical')
+            axs[1,1].set_yticks(no_axis,labels=np.round(z_axis,2), rotation='horizontal')
+            axs[1,1].set_xlabel('Z Position')
+            axs[1,1].set_ylabel('X Position')
+        else:
+            misorientation_plot=np.squeeze(misorientation_map[layer_no,:,:])
+            ax4 = axs[1,1].imshow(misorientation_plot,interpolation='none',cmap='jet')
+            axs[1,1].title.set_text('Misorientation off Provided Grains.out Orientation')
+            axs[1,1].set_xticks(no_axis,labels=np.round(x_axis,2), rotation='vertical')
+            axs[1,1].set_yticks(no_axis,labels=np.round(z_axis,2), rotation='horizontal')
+            axs[1,1].set_xlabel('Z Position')
+            axs[1,1].set_ylabel('X Position')
         # Wrap up
         plt.show()
 
@@ -2790,9 +2814,9 @@ def load_images_from_npz(experiment):
     output_directory = experiment.config.output_directory
     filename = output_directory + os.sep + analysis_name + '_packaged_images_and_omegas.npz'
     data = np.load(filename,mmap_mode="r")
-    print(f'Images loaded from: {filename}')
 
     image_stack = data['image_stack']
+    print(f'Images loaded from: {filename}')
     nframes = np.shape(image_stack)[0]
 
     # Update the experiment
@@ -2805,9 +2829,9 @@ def load_omegas_from_npz_and_correct(experiment,omega_shift_deg=None):
     output_directory = experiment.config.output_directory
     filename = output_directory + os.sep + analysis_name + '_packaged_images_and_omegas.npz'
     data = np.load(filename,mmap_mode="r")
-    print(f'Omegas loaded from: {filename}')
 
     omega_edges_deg = data['omega_edges_deg']
+    print(f'Omegas loaded from: {filename}')
 
     # Do we have a shift in omega
     if omega_shift_deg is not None:

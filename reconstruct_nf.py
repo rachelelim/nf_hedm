@@ -84,7 +84,7 @@ import matplotlib.pyplot as plt
 # %% ==============================================================================
 # FILES TO LOAD -CAN BE EDITED
 # ==============================================================================
-configuration_filepath = '/nfs/chess/user/seg246/software/development/nf_config.yml'
+configuration_filepath = '/nfs/chess/aux/reduced_data/cycles/2023-3/id3a/pagan-3807-a/in718ln/reconstructions/nf/1/nf_config.yml'
 
 # %% ==========================================================================
 # LOAD IMAGES AND EXPERIMENT - DO NOT EDIT
@@ -114,7 +114,7 @@ grain_map, confidence_map = nfutil.process_raw_data(raw_confidence,raw_idx,Xs.sh
 # %% ==========================================================================
 # Show Images - CAN BE EDITED
 # =============================================================================
-layer_num = 3 # Which layer in Y?
+layer_num = 0 # Which layer in Y?
 conf_thresh = 0.6 # If set to None no threshold is used
 nfutil.plot_ori_map(grain_map, confidence_map, Xs, Zs, experiment.exp_maps, 
                     layer_num,experiment.mat[experiment.material_name],experiment.remap,conf_thresh)
