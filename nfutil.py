@@ -1494,8 +1494,9 @@ def generate_experiment(cfg):
     clip_vals = np.array([ncols, nrows])
 
     # Load the images
-    experiment, image_stack = load_images_and_omegas(experiment,omega_shift_deg=cfg.experiment.omega_correction)
-
+    experiment, image_stack = load_images_from_npz(experiment)
+    experiment = load_omegas_from_npz_and_correct(experiment,omega_shift_deg=cfg.experiment.omega_correction)
+    
     # General crystallography data
     beam_energy = valunits.valWUnit("beam_energy", "energy", cfg.experiment.beam_energy, "keV")
     beam_wavelength = constants.keVToAngstrom(beam_energy.getVal('keV'))
@@ -2570,7 +2571,7 @@ def calibrate_parameter(experiment,controller,image_stack,calibration_parameters
             elif parameter_number == 7:
                 # Omega correction
                 # Load in the image stack
-                working_experiment = _load_omegas(working_experiment,omega_shift_deg=val)
+                working_experiment = load_omegas_from_npz_and_correct(working_experiment,omega_shift_deg=val)
 
             # Precompute orientaiton information (should need this for all, but it effects only chi?)
             precomputed_orientation_data = precompute_diffraction_data(working_experiment,controller,experiment.exp_maps)
@@ -2614,7 +2615,7 @@ def calibrate_parameter(experiment,controller,image_stack,calibration_parameters
         elif parameter_number == 7:
             # Omega correction
             # Load in the image stack
-            experiment = _load_omegas(experiment,omega_shift_deg=best_val)
+            experiment = load_omegas_from_npz_and_correct(experiment,omega_shift_deg=best_val)
         
         # Plot the detector distance curve
         plt.figure()
@@ -2688,7 +2689,7 @@ def calibrate_parameter(experiment,controller,image_stack,calibration_parameters
         elif parameter_number == 7:
             # Omega correction
             # Load in the image stack
-            working_experiment = _load_omegas(working_experiment,omega_shift_deg=val)
+            working_experiment = load_omegas_from_npz_and_correct(working_experiment,omega_shift_deg=val)
 
         # Precompute orientaiton information (should need this for all, but it effects only chi?)
         precomputed_orientation_data = precompute_diffraction_data(working_experiment,controller,experiment.exp_maps)
@@ -2784,29 +2785,42 @@ def generate_filepaths_and_omegas(configuration,downselection_number=None):
     
     return filenames, omega_edges_deg
 
-def load_images_and_omegas(experiment,omega_shift_deg=None):
+def load_images_from_npz(experiment):
     analysis_name = experiment.config.analysis_name 
     output_directory = experiment.config.output_directory
     filename = output_directory + os.sep + analysis_name + '_packaged_images_and_omegas.npz'
-    data = np.load(filename)
-    print(f'Data loaded from: {filename}')
+    data = np.load(filename,mmap_mode="r")
+    print(f'Images loaded from: {filename}')
 
     image_stack = data['image_stack']
     nframes = np.shape(image_stack)[0]
+
+    # Update the experiment
+    experiment.nframes = nframes
+
+    return experiment, image_stack
+
+def load_omegas_from_npz_and_correct(experiment,omega_shift_deg=None):
+    analysis_name = experiment.config.analysis_name 
+    output_directory = experiment.config.output_directory
+    filename = output_directory + os.sep + analysis_name + '_packaged_images_and_omegas.npz'
+    data = np.load(filename,mmap_mode="r")
+    print(f'Omegas loaded from: {filename}')
+
     omega_edges_deg = data['omega_edges_deg']
 
     # Do we have a shift in omega
     if omega_shift_deg is not None:
         # Shift the omegas
         omega_edges_deg = omega_edges_deg + omega_shift_deg
-        print(f'Omegas corrected by: {omega_shift_deg}')
+        print(f'Omegas corrected by: {omega_shift_deg} degrees.')
     
     # Define omega edges in radians
     ome_edges = omega_edges_deg*np.pi/180
 
     # Define variables in degrees
     # Omega range is the experimental span of omega space
-    ome_range_deg = [(omega_edges_deg[0],omega_edges_deg[nframes])]  # Degrees
+    ome_range_deg = [(omega_edges_deg[0],omega_edges_deg[experiment.nframes])]  # Degrees
     # Omega period is the range in which your omega space lies (often 0 to 360 or -180 to 180)
     ome_period_deg = (ome_range_deg[0][0], ome_range_deg[0][0]+360.) # Degrees
     # Define variables in radians
@@ -2823,7 +2837,6 @@ def load_images_and_omegas(experiment,omega_shift_deg=None):
     inv_deltas = 1.0/deltas
 
     # Update the experiment
-    experiment.nframes = nframes
     experiment.ome_range = ome_range
     experiment.ome_period = ome_period
     experiment.ome_edges = ome_edges
@@ -2831,7 +2844,7 @@ def load_images_and_omegas(experiment,omega_shift_deg=None):
     experiment.inv_deltas = inv_deltas
     experiment.omega_correction = omega_shift_deg
 
-    return experiment, image_stack
+    return experiment
     
 # Metadata skimmer function
 def skim_metadata(configuration):
