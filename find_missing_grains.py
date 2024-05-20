@@ -84,7 +84,7 @@ import matplotlib.pyplot as plt
 # %% ==============================================================================
 # FILES TO LOAD -CAN BE EDITED
 # ==============================================================================
-configuration_filepath = '/nfs/chess/user/seg246/software/development/nf_config.yml'
+configuration_filepath = 'nf_config.yml'
 # %% ==========================================================================
 # LOAD IMAGES AND EXPERIMENT - DO NOT EDIT
 # =============================================================================

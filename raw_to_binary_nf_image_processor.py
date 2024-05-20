@@ -57,7 +57,7 @@ import matplotlib.pyplot as plt
 # USER INPUT - CAN BE EDITED
 # ==============================================================================
 # What is the file path to the configuration file?
-configuration_filepath = '/nfs/chess/aux/reduced_data/cycles/2023-3/id3a/pagan-3807-a/in718ln/reconstructions/nf/1/nf_config.yml'
+configuration_filepath = 'nf_config.yml'
 
 # %% ===========================================================================
 # LOAD CONFIGURATION - DO NOT EDIT

@@ -84,7 +84,7 @@ import matplotlib.pyplot as plt
 # %% ==============================================================================
 # FILES TO LOAD -CAN BE EDITED
 # ==============================================================================
-configuration_filepath = '/nfs/chess/aux/reduced_data/cycles/2023-3/id3a/pagan-3807-a/in718ln/reconstructions/nf/1/nf_config.yml'
+configuration_filepath = 'nf_config.yml'
 
 # %% ==========================================================================
 # LOAD IMAGES AND EXPERIMENT - DO NOT EDIT
