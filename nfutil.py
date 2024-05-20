@@ -2823,7 +2823,7 @@ def load_images_and_omegas(experiment,omega_shift_deg=None):
     inv_deltas = 1.0/deltas
 
     # Update the experiment
-    experiment.nframes
+    experiment.nframes = nframes
     experiment.ome_range = ome_range
     experiment.ome_period = ome_period
     experiment.ome_edges = ome_edges

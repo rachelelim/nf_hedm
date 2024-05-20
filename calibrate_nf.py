@@ -98,8 +98,6 @@ experiment, image_stack = nfutil.generate_experiment(configuration)
 # Generate the controller
 controller = nfutil.build_controller(configuration)
 
-# experiment.ome_edges = experiment.ome_edges + (-0.1)*np.pi/180
-
 # %% ==========================================================================
 # CALIBRATE THE TRANSLATIONS - CAN BE EDITED
 #==============================================================================
