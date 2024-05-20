@@ -104,7 +104,7 @@ controller = nfutil.build_controller(configuration)
 parameter = 7 # 0=X, 1=Y, 2=Z, 3=RX, 4=RY, 5=RZ, 6=chi, 7=omega
 start = -1 # mm for translations, degrees for rotations
 stop = 1 # mm for translations, degrees for rotations
-steps = 11 # If set to 0, the current experiment will be tested, if 1 it will use the start value
+steps = 0 # If set to 0, the current experiment will be tested, if 1 it will use the start value
 calibration_parameters = [parameter,steps,start,stop]
 experiment = nfutil.calibrate_parameter(experiment,controller,image_stack,calibration_parameters)
 

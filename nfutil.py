@@ -2769,6 +2769,8 @@ def calibrate_parameter(experiment,controller,image_stack,calibration_parameters
                     chi:{yaml_vals[6]}\n\
                         \n\
                     omega_correction: {experiment.omega_correction}')
+        # Load in omegas
+        experiment = load_omegas_from_npz_and_correct(experiment,omega_shift_deg=experiment.omega_correction)
         # Precompute orientaiton information (should need this for all, but it effects only chi?)
         precomputed_orientation_data = precompute_diffraction_data(experiment,controller,experiment.exp_maps)
         # Run the test
