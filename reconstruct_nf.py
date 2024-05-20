@@ -81,7 +81,7 @@ import matplotlib
 # %matplotlib qt
 import matplotlib.pyplot as plt
 
-# %% ==============================================================================
+# %% ===========================================================================
 # FILES TO LOAD -CAN BE EDITED
 # ==============================================================================
 configuration_filepath = 'nf_config.yml'
@@ -119,9 +119,6 @@ conf_thresh = 0.6 # If set to None no threshold is used
 nfutil.plot_ori_map(grain_map, confidence_map, Xs, Zs, experiment.exp_maps, 
                     layer_num,experiment.mat[experiment.material_name],experiment.remap,conf_thresh)
 # Quick note - nfutil assumes that the IPF reference vector is [0 1 0]
-# Print out the average and max confidence
-print('The average confidence map value is: ' + str(np.mean(confidence_map)) +'\n'+
-    'The maximum confidence map value is : ' + str(np.max(confidence_map)))
 
 # %% ==========================================================================
 # SAVE PROCESSED GRAIN MAP DATA - CAN BE EDITED
