@@ -26,6 +26,10 @@ class NF_ImagesConfig(Config):
 
 class LoadingConfig(Config):
     @property
+    def load_style(self):
+        return self._cfg.get('NF_images:image_loading:style')
+    
+    @property
     def sample_raw_data_folder(self):
         return self._cfg.get('NF_images:sample_raw_data_folder')
     

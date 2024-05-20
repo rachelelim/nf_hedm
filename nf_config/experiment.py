@@ -66,5 +66,5 @@ class ExperimentConfig(Config):
         return self._cfg.get('experiment:images_and_omegas:omega_stop', 360.0)
     
     @property
-    def shift_images_in_omega(self):
-        return self._cfg.get('experiment:images_and_omegas:shift_images_in_omega', 0)
+    def omega_correction(self):
+        return self._cfg.get('experiment:images_and_omegas:omega_correction', 0)
