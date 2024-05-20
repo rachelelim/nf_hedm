@@ -65,24 +65,11 @@ configuration_filepath = '/nfs/chess/aux/reduced_data/cycles/2023-3/id3a/pagan-3
 # Go ahead and load the configuration
 configuration = nf_config.open_file(configuration_filepath)[0]
 
-# Comb the nf folder for metadata files (.json and .par) and compile them
-# all_meta = nfutil.skim_metadata(configuration)
-
-# Find the folders associated with this z_height 
-# unique_zheights = np.sort(all_meta[configuration.images.loading.vertical_motor_name].unique())
-# meta = all_meta[np.round(all_meta[configuration.images.loading.vertical_motor_name],5) == configuration.images.loading.target_vertical_position]
-
-# Grab the array of per-frame omega values and file locations
-# filenames,num_imgs = nfutil.skim_image_locations(meta, configuration.images.loading.sample_raw_data_folder)
-filenames,num_imgs = nfutil.generate_image_locations(configuration)
-
-# filenames = filenames[0:150]
-# num_imgs = 150
-
-# Generate the omega edges from the .par file information
-# omegas,omega_edges_deg = nfutil.generate_omega_edges(meta,num_imgs)
-omega_edges_deg = np.linspace(configuration.experiment.omega_start,configuration.experiment.omega_stop,num_imgs+1)
-omegas = omega_edges_deg[:-1]
+# %% ===========================================================================
+# LOAD METADATA AND DOWNSELECT - CAN BE EDITED
+# ==============================================================================
+downselection_number = None # None if you want to do all images, else int
+filenames, omega_edges_deg = nfutil.generate_filepaths_and_omegas(configuration,downselection_number)
 
 # %% ===========================================================================
 # LOAD IMAGES - DO NOT EDIT
@@ -95,7 +82,7 @@ raw_image_stack = nfutil.load_all_images(filenames,controller)
 # PLOTTING - CAN BE EDITED
 # ==============================================================================
 if configuration.output_plot_check:
-    img_num = 100
+    img_num = 50
     fig = plt.figure()
     plt.title('Raw Image: ' + str(img_num))
     plt.imshow(raw_image_stack[img_num,:,:],interpolation='none',clim=[0, 50],cmap='bone')
@@ -106,7 +93,7 @@ if configuration.output_plot_check:
 if configuration.output_plot_check:
     summed_image_int = np.sum(np.sum(raw_image_stack,axis=1),axis=1)
     plt.figure()
-    plt.scatter(np.arange(0,np.shape(omegas)[0],1),summed_image_int)
+    plt.scatter(np.arange(0,np.shape(filenames)[0],1),summed_image_int)
     plt.ylim(0,np.max(summed_image_int))
     plt.title('Image Intensity vs Image Number')
     plt.xlabel('Image Number')
@@ -117,7 +104,7 @@ if configuration.output_plot_check:
     median_int = np.median(summed_image_int)
     num_bad_images = np.sum(summed_image_int < median_int*0.75)
     print('There are potentially ' + str(num_bad_images) + ' images with poor intensity.')
-    print('Potential confidence maximum around ' + str(np.round(1 - num_bad_images/np.shape(omegas)[0],2)))
+    print('Potential confidence maximum around ' + str(np.round(1 - num_bad_images/np.shape(filenames)[0],2)))
 
 # %% ===========================================================================
 # MEDIAN DARKFIELD REMOVAL - DO NOT EDIT
@@ -130,7 +117,7 @@ cleaned_image_stack = nfutil.remove_median_darkfields(raw_image_stack,controller
 # ==============================================================================
 if configuration.output_plot_check:
     fig, axs = plt.subplots(1,2)
-    img_num = 100
+    img_num = 500
     axs[0].imshow(raw_image_stack[img_num,:,:],interpolation='none',clim=[0, 50],cmap='bone')
     axs[1].imshow(cleaned_image_stack[img_num,:,:],interpolation='none',clim=[0, 20],cmap='bone')
     axs[0].title.set_text('Raw Image: ' + str(img_num))
@@ -147,7 +134,7 @@ binarized_image_stack = nfutil.filter_and_binarize_images(cleaned_image_stack,co
 # ==============================================================================
 if configuration.output_plot_check:
     fig, axs = plt.subplots(1,2)
-    img_num = 100
+    img_num = 1000
     axs[0].imshow(raw_image_stack[img_num,:,:],interpolation='none',clim=[10, 50],cmap='bone')
     axs[1].imshow(binarized_image_stack[img_num,:,:],interpolation='none',clim=[0, 1],cmap='bone')
     axs[0].title.set_text('Cleaned Image: ' + str(img_num))
@@ -177,7 +164,6 @@ if configuration.output_plot_check == True and configuration.images.processing.d
 # =============================================================================
 print(f'Saving image stack and omega edges to: {configuration.output_directory}')
 nfutil.save_image_stack(configuration,dilated_image_stack,omega_edges_deg)
-
 
 # %% ==========================================================================
 # MAKE A SCINTILATOR/BEAMSTOP MASK - DO NOT EDIT

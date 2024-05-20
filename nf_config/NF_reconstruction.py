@@ -37,6 +37,8 @@ class NF_ReconstructionConfig(Config):
     @property
     def beam_stop(self):
         key = self._cfg.get('NF_reconstruction:beam_stop:beam_stop_filepath', None)
+        if key == 'None':
+            key = None
         if key is not None:
             return key
         else:

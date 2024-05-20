@@ -532,7 +532,7 @@ def _test_single_orientation_at_single_coordinate(experiment,image_stack,coord_t
             # Calculate the sample rotation matrix
             rMat_ss = xfcapi.make_sample_rmat(experiment.chi, angles[:, 2])
             # Convert the angles to g-vectors
-            gvec_cs = xfcapi.anglesToGVec(angles, rMat_c=rMat_c)
+            gvec_cs = xfcapi.anglesToGVec(angles, chi=experiment.chi, rMat_c=rMat_c)
             # Find where those g-vectors intercept the detector from our coordinate point
             det_xy = xfcapi.gvec_to_xy(gvec_cs, rD, rMat_ss, rMat_c, tD, tS, coord_to_test)
             # Check xy detector positions and omega value to see if intensity exisits
@@ -774,7 +774,7 @@ def _precompute_diffraction_data_of_single_orientation(experiment,exp_map):
     # Calculate the sample rotation matrix
     rMat_ss = xfcapi.make_sample_rmat(experiment.chi, angles[:, 2])
     # Convert the angles to g-vectors
-    gvec_cs = xfcapi.anglesToGVec(angles, rMat_c=rMat_c)
+    gvec_cs = xfcapi.anglesToGVec(angles, chi=experiment.chi ,rMat_c=rMat_c)
     # Handle arrays not being the correct size if we have only one orientation
     if len(np.shape(exp_map)) == 1: exp_map = np.expand_dims(exp_map,0)
     if len(np.shape(rMat_c)) == 2: rMat_c = np.expand_dims(rMat_c,0)
@@ -844,7 +844,7 @@ def _precompute_diffraction_data_of_many_orientations(experiment,exp_maps,start=
         # Calculate the sample rotation matrix
         rMat_ss = xfcapi.make_sample_rmat(experiment.chi, angles[:, 2])
         # Convert the angles to g-vectors
-        gvec_cs = xfcapi.anglesToGVec(angles, rMat_c=rMat_c)
+        gvec_cs = xfcapi.anglesToGVec(angles, chi=experiment.chi, rMat_c=rMat_c)
         # Drop data into arrays
         all_exp_maps[i] = exp_map
         all_angles[i] = angles
@@ -1205,11 +1205,12 @@ def remove_median_darkfields(raw_image_stack,controller,configuration):
                 del vals1, start, stop
 
     # Remove the global threshold
-    print('Dynamic darkfield generated and subtracted.')
-    print(f'Subtracting global threshold of {global_threshold}.')
-    mask = cleaned_image_stack<=global_threshold
-    cleaned_image_stack[mask] = 0
-    cleaned_image_stack[~mask] = cleaned_image_stack[~mask] - global_threshold
+    if global_threshold > 0:
+        print('Dynamic darkfield generated and subtracted.')
+        print(f'Subtracting global threshold of {global_threshold}.')
+        mask = cleaned_image_stack<=global_threshold
+        cleaned_image_stack[mask] = 0
+        cleaned_image_stack[~mask] = cleaned_image_stack[~mask] - global_threshold
 
     # How long did it take?
     t1 = timeit.default_timer()
@@ -1408,6 +1409,9 @@ def generate_test_coordinates(cross_sectional_dim, v_bnds, voxel_spacing,
 # ===============================================================================
 # Generate the experiment
 def generate_experiment(cfg):
+    # Startup up the experiment
+    experiment = argparse.Namespace()
+    experiment.config = cfg
     analysis_name = cfg.analysis_name # The name you want all your output files to have within thier filename (relevant to the sample)
     main_directory = cfg.main_directory
     output_directory = cfg.output_directory
@@ -1451,50 +1455,6 @@ def generate_experiment(cfg):
     # Tell the user what we are doing so they know
     print(f'{n_grains} grains out of a total {n_grains_pre_cut} found to satisfy completness and chi^2 thresholds.')
 
-    # Load the images
-    images_filename = output_directory + os.sep + analysis_name + '_packaged_images.npy'
-    if os.path.isfile(images_filename):
-        # We have an image stack to load
-        print(f'Images to be loaded from: {images_filename}')
-        image_stack = np.load(images_filename)
-        nframes = np.shape(image_stack)[0]
-    # else:
-        # TODO: Add old image load routine?
-        # nframes = cfg.images.nframes
-
-    # Load the omega edges
-    omega_edges_filename = output_directory + os.sep + analysis_name + '_omega_edges_deg.npy'
-    if os.path.isfile(omega_edges_filename):
-        # Load the omega edges - first value is the starting ome position of first image's slew, last value is the end position of the final image's slew
-        omega_edges_deg = np.load(omega_edges_filename)
-    else:
-        # Define omega edges manually
-        omega_edges_deg = np.linspace(cfg.experiment.omega_start, cfg.experiment.omega_stop, num=nframes+1)
-
-    # Shift in omega positive or negative by X number of images
-    num_img_to_shift = cfg.experiment.shift_images_in_omega
-    if num_img_to_shift > 0:
-        # Moving positive omega so first image is not at zero, but further along
-        # Using the mean omega step size - change if you need to
-        omega_edges_deg = omega_edges_deg + num_img_to_shift*np.mean(np.gradient(omega_edges_deg))
-    elif num_img_to_shift < 0:
-        # For whatever reason the multiprocessor does not like negative numbers, trim the stack
-        image_stack = image_stack[np.abs(num_img_to_shift):,:,:]
-        nframes = np.shape(image_stack)[0]
-        omega_edges_deg = omega_edges_deg[:num_img_to_shift]
-    # Define omega edges in radians
-    ome_edges = omega_edges_deg*np.pi/180
-
-
-    # Define variables in degrees
-    # Omega range is the experimental span of omega space
-    ome_range_deg = [(omega_edges_deg[0],omega_edges_deg[nframes])]  # Degrees
-    # Omega period is the range in which your omega space lies (often 0 to 360 or -180 to 180)
-    ome_period_deg = (ome_range_deg[0][0], ome_range_deg[0][0]+360.) # Degrees
-    # Define variables in radians
-    ome_period = (ome_period_deg[0]*np.pi/180.,ome_period_deg[1]*np.pi/180.)
-    ome_range = [(ome_range_deg[0][0]*np.pi/180.,ome_range_deg[0][1]*np.pi/180.)]
-
     # Load the detector data
     if os.path.isfile(cfg.input_files.detector_file):
         instr = load_instrument(cfg.input_files.detector_file)
@@ -1524,23 +1484,17 @@ def generate_experiment(cfg):
     # Detector panel dimension information
     panel_dims = [tuple(panel.corner_ll),
                   tuple(panel.corner_ur)]
-    x_col_edges = panel.col_edge_vec
-    y_row_edges = panel.row_edge_vec
+    experiment.x_col_edges = panel.col_edge_vec
+    experiment.y_row_edges = panel.row_edge_vec
     # What is the max tth possible on the detector?
     max_pixel_tth = instrument.max_tth(instr)
     # Package detector parameters
     detector_params = np.hstack([tilt_angles_xyzp, tVec_d, chi, tVec_s])
     distortion = panel.distortion  # TODO: This is currently not used.
-
-    # Parametrization for faster computation
-    base = np.array([x_col_edges[0],
-                     y_row_edges[0],
-                     ome_edges[0]])
-    deltas = np.array([x_col_edges[1] - x_col_edges[0],
-                       y_row_edges[1] - y_row_edges[0],
-                       ome_edges[1] - ome_edges[0]])
-    inv_deltas = 1.0/deltas
     clip_vals = np.array([ncols, nrows])
+
+    # Load the images
+    experiment, image_stack = load_images_and_omegas(experiment,omega_shift_deg=cfg.experiment.omega_correction)
 
     # General crystallography data
     beam_energy = valunits.valWUnit("beam_energy", "energy", cfg.experiment.beam_energy, "keV")
@@ -1559,9 +1513,7 @@ def generate_experiment(cfg):
     else:
         print('No materials file found.')
 
-
     pd = mats[cfg.experiment.material_name].planeData
-
 
     # Check and set the max tth desired or use the detector value
     max_tth = cfg.experiment.max_tth
@@ -1577,7 +1529,7 @@ def generate_experiment(cfg):
         # We need to make a mask out of the parameters
         beam_stop_mask = np.zeros([nrows,ncols],bool)
         # What is the middle position of the beamstop
-        middle_idx = int(np.floor(nrows/2.) + np.round(beam_stop_parms[0]/col_ps))
+        middle_idx = int(np.floor(nrows/2.) - np.round(beam_stop_parms[0]/col_ps))
         # How thick is the beamstop
         half_width = int(beam_stop_parms[1]/col_ps/2)
         # Make the beamstop all the way across the image
@@ -1592,32 +1544,21 @@ def generate_experiment(cfg):
         except:
             beam_stop_parms = np.load(output_directory + os.sep + analysis_name + '_beamstop_mask.npy')
             print(f'Loaded beam stop mask from: {output_directory + os.sep + analysis_name + "_beamstop_mask.npy"}')
-
-
-    # Package up the experiment
-    experiment = argparse.Namespace()
-    # grains related information
+    
+    # Add stuff to the experiment
     experiment.n_grains = n_grains
     experiment.exp_maps = exp_maps
     experiment.plane_data = pd
     experiment.detector_params = detector_params
     experiment.pixel_size = pixel_size
-    experiment.ome_range = ome_range
-    experiment.ome_period = ome_period
-    experiment.x_col_edges = x_col_edges
-    experiment.y_row_edges = y_row_edges
-    experiment.ome_edges = ome_edges
     experiment.ncols = ncols
     experiment.nrows = nrows
-    experiment.nframes = nframes  # used only in simulate...
     experiment.rMat_d = rMat_d
     experiment.tVec_d = tVec_d
     experiment.chi = chi  # note this is used to compute S... why is it needed?
     experiment.tVec_s = tVec_s
     experiment.distortion = distortion
     experiment.panel_dims = panel_dims  # used only in simulate...
-    experiment.base = base
-    experiment.inv_deltas = inv_deltas
     experiment.clip_vals = clip_vals
     experiment.bsp = beam_stop_parms
     experiment.mat = mats
@@ -1666,11 +1607,6 @@ def generate_experiment(cfg):
         experiment.coord_cutoff_scale = cfg.reconstruction.missing_grains['coord_cutoff_scale']
         experiment.iter_cutoff = cfg.reconstruction.missing_grains['iter_cutoff']
         experiment.re_run_and_save = cfg.reconstruction.missing_grains['re_run_and_save']
-
-
-
-
-
 
     return experiment, image_stack
 
@@ -2564,7 +2500,7 @@ def uniform_fundamental_zone_sampling(point_group_number,average_angular_spacing
 # ===============================================================================
 def calibrate_parameter(experiment,controller,image_stack,calibration_parameters):
     # Which parameter?
-    experiment_parameter_index = [3,4,5,0,1,2,6]
+    experiment_parameter_index = [3,4,5,0,1,2,6,7]
     parameter_number = experiment_parameter_index[calibration_parameters[0]] # 0=X, 1=Y, 2=Z, 3=RX, 4=RY, 5=RZ, 6=chi
     # How many iterations
     iterations = calibration_parameters[1]
@@ -2578,7 +2514,8 @@ def calibrate_parameter(experiment,controller,image_stack,calibration_parameters
              'Detector X Rotation (RX)',
              'Detector Y Rotation (RY)',
              'Detector Z Rotation (RZ)',
-             'Chi Angle']
+             'Chi Angle',
+             'Omega Correction']
     parameter_name = names[calibration_parameters[0]]
 
     # Copy the original experiment to work with
@@ -2626,10 +2563,14 @@ def calibrate_parameter(experiment,controller,image_stack,calibration_parameters
                 # Update the working_experiment
                 working_experiment.rMat_d = rMat_d
                 working_experiment.detector_params[0:3] = np.multiply(xyzp_tilts_deg,np.pi/180.0)
-            else:
+            elif parameter_number == 6:
                 # Chi angle
                 working_experiment.chi = val*np.pi/180.0
                 working_experiment.detector_params[6] = val*np.pi/180.0
+            elif parameter_number == 7:
+                # Omega correction
+                # Load in the image stack
+                working_experiment = _load_omegas(working_experiment,omega_shift_deg=val)
 
             # Precompute orientaiton information (should need this for all, but it effects only chi?)
             precomputed_orientation_data = precompute_diffraction_data(working_experiment,controller,experiment.exp_maps)
@@ -2666,10 +2607,14 @@ def calibrate_parameter(experiment,controller,image_stack,calibration_parameters
             # Update the working_experiment
             experiment.rMat_d = rMat_d
             experiment.detector_params[0:3] = np.multiply(xyzp_tilts_deg,np.pi/180.0)
-        else:
+        elif parameter_number == 6:
             # Chi angle
-            experiment.chi = val*np.pi/180.0
-            experiment.detector_params[6] = val*np.pi/180.0
+            experiment.chi = best_val*np.pi/180.0
+            experiment.detector_params[6] = best_val*np.pi/180.0
+        elif parameter_number == 7:
+            # Omega correction
+            # Load in the image stack
+            experiment = _load_omegas(experiment,omega_shift_deg=best_val)
         
         # Plot the detector distance curve
         plt.figure()
@@ -2709,7 +2654,9 @@ def calibrate_parameter(experiment,controller,image_stack,calibration_parameters
                     - {yaml_vals[0]}\n\
                     - {yaml_vals[1]}\n\
                     - {yaml_vals[2]}\n\
-                    chi:{yaml_vals[6]}')
+                    chi: {yaml_vals[6]}\n\
+                        \n\
+                    omega_correction: {experiment.omega_correction}')
         return experiment
     elif iterations == 1:
         # Initialize
@@ -2734,10 +2681,14 @@ def calibrate_parameter(experiment,controller,image_stack,calibration_parameters
             # Update the working_experiment
             working_experiment.rMat_d = rMat_d
             working_experiment.detector_params[0:3] = np.multiply(xyzp_tilts_deg,np.pi/180.0)
-        else:
+        elif parameter_number == 6:
             # Chi angle
             working_experiment.chi = val*np.pi/180.0
             working_experiment.detector_params[6] = val*np.pi/180.0
+        elif parameter_number == 7:
+            # Omega correction
+            # Load in the image stack
+            working_experiment = _load_omegas(working_experiment,omega_shift_deg=val)
 
         # Precompute orientaiton information (should need this for all, but it effects only chi?)
         precomputed_orientation_data = precompute_diffraction_data(working_experiment,controller,experiment.exp_maps)
@@ -2772,7 +2723,9 @@ def calibrate_parameter(experiment,controller,image_stack,calibration_parameters
                     - {yaml_vals[0]}\n\
                     - {yaml_vals[1]}\n\
                     - {yaml_vals[2]}\n\
-                    chi:{yaml_vals[6]}')
+                    chi:{yaml_vals[6]}\n\
+                        \n\
+                    omega_correction: {working_experiment.omega_correction}')
         return working_experiment
     else:
         print('Not iterating over any variable; testing current experiment.')
@@ -2788,7 +2741,9 @@ def calibrate_parameter(experiment,controller,image_stack,calibration_parameters
                     - {yaml_vals[0]}\n\
                     - {yaml_vals[1]}\n\
                     - {yaml_vals[2]}\n\
-                    chi:{yaml_vals[6]}')
+                    chi:{yaml_vals[6]}\n\
+                        \n\
+                    omega_correction: {experiment.omega_correction}')
         # Precompute orientaiton information (should need this for all, but it effects only chi?)
         precomputed_orientation_data = precompute_diffraction_data(experiment,controller,experiment.exp_maps)
         # Run the test
@@ -2803,6 +2758,81 @@ def calibrate_parameter(experiment,controller,image_stack,calibration_parameters
 # %% ============================================================================
 # METADATA READERS AND IMAGE PROCESSING
 # ===============================================================================
+def generate_filepaths_and_omegas(configuration,downselection_number=None):
+    if configuration.images.loading.load_style == 'par':
+        # Comb the nf folder for metadata files (.json and .par) and compile them
+        all_meta = skim_metadata(configuration)
+
+        # Find the folders associated with this z_height 
+        meta = all_meta[np.round(all_meta[configuration.images.loading.vertical_motor_name],5) == configuration.images.loading.target_vertical_position]
+
+        # Grab the array of per-frame omega values and file locations
+        filenames,num_imgs = skim_image_locations(meta, configuration.images.loading.sample_raw_data_folder)
+
+        # Generate the omega edges from the .par file information
+        omegas,omega_edges_deg = generate_omega_edges(meta,num_imgs)
+
+    elif configuration.images.loading.load_style == 'direct':
+        # Load configuation manually
+        filenames,num_imgs = generate_image_locations(configuration)
+        omega_edges_deg = np.linspace(configuration.experiment.omega_start,configuration.experiment.omega_stop,num_imgs+1)
+
+    if downselection_number is not None:
+        downselection_number = 100 # np.sum(num_imgs)
+        filenames = filenames[0:downselection_number]
+        omega_edges_deg = omega_edges_deg[0:downselection_number+1]
+    
+    return filenames, omega_edges_deg
+
+def load_images_and_omegas(experiment,omega_shift_deg=None):
+    analysis_name = experiment.config.analysis_name 
+    output_directory = experiment.config.output_directory
+    filename = output_directory + os.sep + analysis_name + '_packaged_images_and_omegas.npz'
+    data = np.load(filename)
+    print(f'Data loaded from: {filename}')
+
+    image_stack = data['image_stack']
+    nframes = np.shape(image_stack)[0]
+    omega_edges_deg = data['omega_edges_deg']
+
+    # Do we have a shift in omega
+    if omega_shift_deg is not None:
+        # Shift the omegas
+        omega_edges_deg = omega_edges_deg + omega_shift_deg
+        print(f'Omegas corrected by: {omega_shift_deg}')
+    
+    # Define omega edges in radians
+    ome_edges = omega_edges_deg*np.pi/180
+
+    # Define variables in degrees
+    # Omega range is the experimental span of omega space
+    ome_range_deg = [(omega_edges_deg[0],omega_edges_deg[nframes])]  # Degrees
+    # Omega period is the range in which your omega space lies (often 0 to 360 or -180 to 180)
+    ome_period_deg = (ome_range_deg[0][0], ome_range_deg[0][0]+360.) # Degrees
+    # Define variables in radians
+    ome_period = (ome_period_deg[0]*np.pi/180.,ome_period_deg[1]*np.pi/180.)
+    ome_range = [(ome_range_deg[0][0]*np.pi/180.,ome_range_deg[0][1]*np.pi/180.)]
+    x_col_edges = experiment.x_col_edges
+    y_row_edges = experiment.y_row_edges
+    base = np.array([x_col_edges[0],
+                     y_row_edges[0],
+                     ome_edges[0]])
+    deltas = np.array([x_col_edges[1] - x_col_edges[0],
+                       y_row_edges[1] - y_row_edges[0],
+                       ome_edges[1] - ome_edges[0]])
+    inv_deltas = 1.0/deltas
+
+    # Update the experiment
+    experiment.nframes
+    experiment.ome_range = ome_range
+    experiment.ome_period = ome_period
+    experiment.ome_edges = ome_edges
+    experiment.base = base
+    experiment.inv_deltas = inv_deltas
+    experiment.omega_correction = omega_shift_deg
+
+    return experiment, image_stack
+    
 # Metadata skimmer function
 def skim_metadata(configuration):
     """
@@ -2829,7 +2859,7 @@ def skim_metadata(configuration):
     
     # Read in headers from each json and data from each par as Dataframes
     df_list = [
-        pd.read_csv(p, names=h, delim_whitespace=True, comment="#")
+        pd.read_csv(p, names=h, sep='\s+', comment="#")
         for h, p in zip(headers, f_par)
     ]
     
@@ -2866,8 +2896,8 @@ def skim_image_locations(meta_df, raw_folder):
     
     if flag == 1:
         print("HEY, LISTEN!  There was an unexpected number of images within at least one scan folder.\n\
-This code will proceed with the shortened number of images and will assume that\n\
-the first image is still the 'goodstart' as defined in the par file.")
+        This code will proceed with the shortened number of images and will assume that\n\
+        the first image is still the 'goodstart' as defined in the par file.")
             
     # flatten the list of lists
     files = [item for sub in files for item in sub]
@@ -2901,7 +2931,6 @@ def generate_image_locations(configuration):
             img = img + 1
 
     return filenames, num_images_per_folder*num_folders
-
 
 # Omega generator function
 def generate_omega_edges(meta_df,num_imgs_per_scan):
@@ -3043,9 +3072,10 @@ def dilate_image_stack(binarized_image_stack,dilate_omega):
 def save_image_stack(cfg,image_stack,omega_edges_deg):
     analysis_name = cfg.analysis_name 
     output_directory = cfg.output_directory
-    np.save(output_directory + os.sep + analysis_name + '_packaged_images.npy', image_stack)
-    np.save(output_directory + os.sep + analysis_name + '_omega_edges_deg.npy', omega_edges_deg)
-    print("Done saving")
+    filename = output_directory + os.sep + analysis_name + '_packaged_images_and_omegas.npz'
+    np.savez(filename, image_stack=image_stack, omega_edges_deg=omega_edges_deg)
+
+    print(f'Data saved to: {filename}')
 
 def make_beamstop_mask(raw_image_stack,num_img_for_median,binarization_threshold,errosions,dilations,feature_size_to_remove):
     # Grab the first image
@@ -3065,8 +3095,6 @@ def make_beamstop_mask(raw_image_stack,num_img_for_median,binarization_threshold
     working_img = working_img == 0
     # Return 
     return working_img
-
-
 
 
 

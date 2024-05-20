@@ -98,15 +98,15 @@ experiment, image_stack = nfutil.generate_experiment(configuration)
 # Generate the controller
 controller = nfutil.build_controller(configuration)
 
-experiment.ome_edges = experiment.ome_edges + (-0.1)*np.pi/180
+# experiment.ome_edges = experiment.ome_edges + (-0.1)*np.pi/180
 
 # %% ==========================================================================
 # CALIBRATE THE TRANSLATIONS - CAN BE EDITED
 #==============================================================================
-parameter = 1 # 0=X, 1=Y, 2=Z, 3=RX, 4=RY, 5=RZ, 6=chi
-start = 1.571 # mm for translations, degrees for rotations
-stop = 1.521 # mm for translations, degrees for rotations
-steps = 1 # If set to 0, the current experiment will be tested, if 1 it will use the start value
+parameter = 7 # 0=X, 1=Y, 2=Z, 3=RX, 4=RY, 5=RZ, 6=chi, 7=omega
+start = -1 # mm for translations, degrees for rotations
+stop = 1 # mm for translations, degrees for rotations
+steps = 11 # If set to 0, the current experiment will be tested, if 1 it will use the start value
 calibration_parameters = [parameter,steps,start,stop]
 experiment = nfutil.calibrate_parameter(experiment,controller,image_stack,calibration_parameters)
 
