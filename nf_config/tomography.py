@@ -12,10 +12,6 @@ class TomographyConfig(Config):
         self._cfg = cfg
 
     @property
-    def data_folder(self):
-        return self._cfg.get('tomography:data_folder')
-
-    @property
     def img_stem(self):
         return self._cfg.get('tomography:img_stem')
 
@@ -85,15 +81,15 @@ class TomoImagesConfig(Config):
 
     @property
     def img_start(self):
-        return self._cfg.get('tomography:tomo_images:img_start')
+        return self._cfg.get('tomography:images:img_start')
 
     @property
     def num_imgs(self):
-        return self._cfg.get('tomography:tomo_images:num_imgs')
+        return self._cfg.get('tomography:images:num_imgs')
 
     @property
     def folder(self):
-        return self._cfg.get('tomography:tomo_images:folder')
+        return self._cfg.get('tomography:images:folder')
 
 class TomoProcessingConfig(Config):
 
@@ -111,7 +107,7 @@ class TomoProcessingConfig(Config):
 
     @property
     def erosion_iter(self):
-        return self._cfg.get('tomography:processings:erosion_iter', 1)
+        return self._cfg.get('tomography:processing:erosion_iter', 1)
 
     @property
     def dilation_iter(self):
