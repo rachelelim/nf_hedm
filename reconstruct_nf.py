@@ -59,159 +59,106 @@ NOTES:
 # Imports - NO CHANGES NEEDED
 # ==============================================================================
 # General Imports
-import numpy as np
-import multiprocessing as mp
-import os
 
 # Hexrd imports
+import importlib
+import argparse
+import matplotlib.pyplot as plt
+import matplotlib
+import nf_config
 import nfutil as nfutil
+import numpy as np
+importlib.reload(nf_config)
+
+importlib.reload(nfutil)
 
 # Matplotlib
 # This is to allow interactivity of inline plots in your gui
 # the import ipywidgets as widgets line is not needed - however, you do need to run a pip install ipywidgets
 # the import ipympl line is not needed - however, you do need to run a pip install ipympl
-#import ipywidgets as widgets
-#import ipympl 
-import matplotlib
+# import ipywidgets as widgets
+# import ipympl
 # The next lines are formatted correctly, no matter what your IDE says
 # For inline, interactive plots (if you use these, make sure to run a plt.close() to prevent crashing)
-%matplotlib widget
+# %matplotlib widget
 # For inline, non-interactive plots
 # %matplotlib inline
 # For pop out, interactive plots (cannot be used with an SSH tunnel)
 # %matplotlib qt
-import matplotlib.pyplot as plt
 
-# %% ==========================================================================
-# USER INFORMATION - CAN BE EDITED
-# =============================================================================
-# Working directory - could be of the form: '/nfs/chess/aux/reduced_data/cycles/[cycle ID]/[beamline]/BTR/sample/YOUR FAVORITE BOOKKEEPING STRUCTURE'
-working_directory = '/your/path/here'
+# %%
+parser = argparse.ArgumentParser(description='Preprocess NF image stack')
 
-# Where do you want to drop any output files
-output_directory = working_directory + '/output/'
-output_stem = 'sample_1_name' # Something relevant to your sample
+parser.add_argument('input_file', type=str,
+                    help='Input File for NF reconstruction')
 
-# Detector file (retiga, manta,...)
-detector_filepath = working_directory + '/manta.yml'
 
-# Materials file - from HEXRDGUI (MAKE SURE YOUR HKLS ARE DEFINED CORRECTLY FOR YOUR MATERIAL)
-materials_filepath = working_directory + '/materials.h5'
+args = parser.parse_args()
+configuration_filepath = args.input_file
 
-# Material name in materials.h5 file from HEXRGUI
-material_name = 'in718'
-max_tth = None  # degrees, if None is input max tth will be set by the geometry
-# NOTE: Again, make sure the HKLs are set correctly in the materials file that you loaded
-    # If you set max_tth to 20 degrees, but you only have HKLs out to 15 degrees selected
-    # then you will only use the selected HKLs out to 15 degrees
+# %% ===========================================================================
+# FILES TO LOAD -CAN BE EDITED
+# ==============================================================================
+# configuration_filepath = '/nfs/chess/user/relim/ti7al-cyclic/NF/initial/nf_initial_config.yml'
+#configuration_filepath = './s27-1_L0.yml'
+# configuration_filepath = '/nfs/chess/user/relim/ti7al-cyclic/NF/final/nf_final_config.yml'
+# configuration_filepath = '/nfs/chess/user/relim/voisin-3061-d/0422-s19-1/NF/intragranular/nf_initial_config.yml'
 
-# What was the stem you used during image creation via nf_multithreaded_image_processing?
-image_stem = 'sample_1_images'
-num_img_to_shift = 0 # Postive moves positive omega, negative moves negative omega, must be integer (if nothing was wrong with your metadata this should be 0)
-
-# Grains.out information
-grains_out_filepath = '/your/path/here/grains.out'
-# Completness threshold - grains with completness GREATER than this value will be used
-completness_threshold = 0.25 # 0.5 is a good place to start
-# Chi^2 threshold - grains with Chi^2 LESS than this value will be used
-chi2_threshold = 0.005  # 0.005 is a good place to stay at unless you have good reason to change it
-
-# Tomorgraphy mask information
-# Mask location
-mask_filepath = None # If you have no mask set mask_filepath = None
-# Vertical offset: this is generally the difference in y motor positions between the tomo and nf layer (tomo_motor_z-nf_motor_z), needed for registry
-mask_vertical_offset = 0.0 # mm
-
-# If no tomography is used (use_mask=False) we will generate a square test grid
-# Cross sectional to reconstruct (should be at least 20%-30% over sample width)
-cross_sectional_dimensions = 1.3 # Side length of the cross sectional region to probe (mm)
-voxel_spacing = 0.005 # in mm, voxel spacing for the near field reconstruction
-
-# Vertical (y) reconstruction voxel bounds in mm, ALWAYS USED REGARDLESS OF TOMOGRAPHY
-# A single layer is produced if, for example, vertical_bounds = [-0.0025, 0.0025] with a 0.005 voxel size
-vertical_bounds = [-0.0025, 0.0025] # mm 
-
-# Beam stop details
-use_beam_stop_mask = 1 # If 1, this will ignore the next two parameters and load the mask made by the raw_to_binary_nf_image_processor.py
-beam_stop_y_cen = 0.0  # mm, measured from the origin of the detector paramters
-beam_stop_width = 0.1  # mm, width of the beam stop vertically
-
-# Multiprocessing and RAM parameters
-ncpus = 128 # mp.cpu_count() - 10 # Use as many CPUs as are available
-chunk_size = -1 # Use -1 if you wish automatic chunk_size calculation
 
 # %% ==========================================================================
 # LOAD IMAGES AND EXPERIMENT - DO NOT EDIT
 # =============================================================================
-print('Loading the image stack...')
-# Load the cleaned image stack from the first script
-image_stack = np.load(output_directory + os.sep + image_stem + '_binarized_images.npy')
-# Load the omega edges - first value is the starting ome position of first image's slew, last value is the end position of the final image's slew
-omega_edges_deg = np.load(output_directory + os.sep + image_stem + '_omega_edges_deg.npy')
-# Load/make the beamstop where 1s indicate non-intensity-counting pixels
-if use_beam_stop_mask == 1:
-    # Load from file
-    beam_stop_parms = np.load(output_directory + os.sep + image_stem + '_beamstop_mask.npy')
-else:
-    # Generate
-    beam_stop_parms = np.array([beam_stop_y_cen, beam_stop_width])
-# Shift in omega positive or negative by X number of images
-if num_img_to_shift > 0:
-    # Moving positive omega so first image is not at zero, but further along
-    # Using the mean omega step size - change if you need to
-    omega_edges_deg = omega_edges_deg + num_img_to_shift*np.mean(np.gradient(omega_edges_deg))
-elif num_img_to_shift < 0:
-    # For whatever reason the multiprocessor does not like negative numbers, trim the stack
-    image_stack = image_stack[np.abs(num_img_to_shift):,:,:]
-    omega_edges_deg = omega_edges_deg[:num_img_to_shift]
-print('Image stack loaded.')
+# Go ahead and load the configuration
+configuration = nf_config.open_file(configuration_filepath)[0]
 
+# %%
 # Generate the experiment
-experiment = nfutil.generate_experiment(grains_out_filepath, detector_filepath, materials_filepath, material_name, 
-                                        max_tth,completness_threshold, chi2_threshold,omega_edges_deg,
-                                        beam_stop_parms,voxel_spacing,vertical_bounds,cross_sectional_dim=cross_sectional_dimensions)
-controller = nfutil.build_controller(ncpus=ncpus, chunk_size=chunk_size, check=None, generate=None, limit=None)
+experiment, image_stack = nfutil.generate_experiment(configuration)
+# Generate the controller
+controller = nfutil.build_controller(configuration)
 # %% ===========================================================================
 # LOAD MASK / GENERATE TEST COORDINATES  - NO CHANGES NEEDED
 # ==============================================================================
-Xs, Ys, Zs, mask, test_coordinates = nfutil.generate_test_coordinates(experiment.cross_sectional_dimensions, experiment.vertical_bounds, voxel_spacing,mask_data_file=mask_filepath,mask_vert_offset=mask_vertical_offset)
+Xs, Ys, Zs, mask, test_coordinates = nfutil.generate_test_coordinates(
+    experiment.cross_sectional_dimensions, experiment.vertical_bounds,
+    experiment.voxel_spacing, mask_data_file=experiment.mask_filepath,
+    vertical_motor_position=experiment.vertical_motor_position)
 
 # %% ==========================================================================
 # PRECOMPUTE ORIENTATION DATA
 # =============================================================================
-precomputed_orientation_data = nfutil.precompute_diffraction_data(experiment,controller,experiment.exp_maps)
+precomputed_orientation_data = nfutil.precompute_diffraction_data(
+    experiment, controller, experiment.exp_maps)
 
 # %% ==========================================================================
 # TEST ORIENTATIONS AND PROCESS OUTPUT
 # =============================================================================
-raw_exp_maps, raw_confidence, raw_idx = nfutil.test_orientations_at_coordinates(experiment,controller,image_stack,precomputed_orientation_data,test_coordinates,refine_yes_no=0)
-grain_map, confidence_map = nfutil.process_raw_data(raw_confidence,raw_idx,Xs.shape,mask=mask,id_remap=experiment.remap)
+raw_exp_maps, raw_confidence, raw_idx = nfutil.test_orientations_at_coordinates(
+    experiment, controller, image_stack, precomputed_orientation_data, test_coordinates, refine_yes_no=0)
+grain_map, confidence_map = nfutil.process_raw_data(
+    raw_confidence, raw_idx, Xs.shape, mask=mask.astype(bool), id_remap=experiment.remap)
 
 # %% ==========================================================================
 # Show Images - CAN BE EDITED
 # =============================================================================
-layer_num = 0 # Which layer in Y?
-conf_thresh = 0.6 # If set to None no threshold is used
-nfutil.plot_ori_map(grain_map, confidence_map, Xs, Zs, experiment.exp_maps, 
-                    layer_num,experiment.mat[material_name],experiment.remap,conf_thresh)
+layer_num = 0  # Which layer in Y?
+conf_thresh = 0.2  # If set to None no threshold is used
+nfutil.plot_ori_map(grain_map, confidence_map, Xs, Zs, experiment.exp_maps,
+                    layer_num, experiment.mat[experiment.material_name], experiment.remap, conf_thresh)
 # Quick note - nfutil assumes that the IPF reference vector is [0 1 0]
-# Print out the average and max confidence
-print('The average confidence map value is: ' + str(np.mean(confidence_map)) +'\n'+
-    'The maximum confidence map value is : ' + str(np.max(confidence_map)))
 
 # %% ==========================================================================
 # SAVE PROCESSED GRAIN MAP DATA - CAN BE EDITED
-# =============================================================================
-nfutil.save_nf_data(output_directory, output_stem, grain_map, confidence_map,
+# # =============================================================================
+nfutil.save_nf_data(experiment.output_directory, experiment.analysis_name, grain_map, confidence_map,
                     Xs, Ys, Zs, experiment.exp_maps, tomo_mask=mask, id_remap=experiment.remap,
-                    save_type=['npz']) # Can be npz or hdf5
+                    save_type=['npz'])  # Can be npz or hdf5
 
 # %% ==========================================================================
 # SAVE PROCESSED GRAIN MAP DATA WITH IPF COLORS - CAN BE EDITED
 # =============================================================================
-nfutil.save_nf_data_for_paraview(output_directory,output_stem,grain_map,confidence_map,Xs,Ys,Zs,
-                             experiment.exp_maps,experiment.mat[material_name], tomo_mask=mask,
-                             id_remap=experiment.remap)
+nfutil.save_nf_data_for_paraview(experiment.output_directory, experiment.analysis_name, grain_map, confidence_map, Xs,
+                                 Ys, Zs, experiment.exp_maps, experiment.mat[experiment.material_name], tomo_mask=mask, id_remap=experiment.remap)
 # Quick note - nfutil assumes that the IPF reference vector is [0 1 0]
 
 
