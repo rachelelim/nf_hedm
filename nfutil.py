@@ -1,5 +1,5 @@
 """
-contributing authors: dcp5303, ken38, seg246, Austin Gerlt, Simon Mason
+contributing authors: dcp5303, ken38, seg246, Austin Gerlt, Simon Mason, lim37
 """
 # %% ============================================================================
 # IMPORTS
@@ -41,7 +41,7 @@ from hexrd.sampleOrientations import sampleRFZ
 # the import ipywidgets as widgets line is not needed - however, you do need to run a pip install ipywidgets
 # the import ipympl line is not needed - however, you do need to run a pip install ipympl
 #import ipywidgets as widgets
-#import ipympl 
+#import ipympl
 import matplotlib
 # The next lines are formatted correctly, no matter what your IDE says
 # For inline, interactive plots (if you use these, make sure to run a plt.close() to prevent crashing)
@@ -250,10 +250,30 @@ def checking_result_handler(filename):
 
     return CheckingResultHandler(filename)
 
-def build_controller(check=None,generate=None,ncpus=2,chunk_size=-1,limit=None):
-    # builds the controller to use based on the args
+def build_controller(configuration):
+    """
+    Build a multiprocessing controller using the configuration object.
 
-    # result handle
+    Parameters
+    ----------
+    configuration : object
+        Configuration object with multiprocessing attributes:
+            - num_cpus
+            - chunk_size
+            - check
+            - generate
+            - limit
+
+    Returns
+    -------
+    controller : ProcessController
+    """
+    ncpus = configuration.multiprocessing.num_cpus
+    chunk_size = configuration.multiprocessing.chunk_size
+    check = configuration.multiprocessing.check
+    generate = configuration.multiprocessing.generate
+    limit = configuration.multiprocessing.limit
+
     try:
         progress_handler = progressbar_progress_observer()
     except ImportError:
@@ -261,19 +281,12 @@ def build_controller(check=None,generate=None,ncpus=2,chunk_size=-1,limit=None):
 
     if check is not None:
         if generate is not None:
-            logging.warn(
-                "generating and checking can not happen at the same time, "
-                + "going with checking")
-
+            logging.warn("generating and checking can not happen at the same time, going with checking")
         result_handler = checking_result_handler(check)
     elif generate is not None:
         result_handler = saving_result_handler(generate)
     else:
         result_handler = forgetful_result_handler()
-
-    # if args.ncpus > 1 and os.name == 'nt':
-    #     logging.warn("Multiprocessing on Windows is disabled for now")
-    #     args.ncpus = 1
 
     controller = ProcessController(result_handler, progress_handler,
                                    ncpus=ncpus,
@@ -313,7 +326,7 @@ def multiprocessing_pool(ncpus, state):
     #           precomp,
     #           coords,
     #           experiment )
-    
+
     if multiprocessing.get_start_method() == 'fork':
         # Use FORK multiprocessing.
 
@@ -405,7 +418,7 @@ def _quant_and_clip_confidence(coords, angles, image,
         # if len(bsp) == 2: # Added this flag for handling if we have a mask type beamstop - SEG 10/28/2023
         #     if abs(yf-bsp[0]) < (bsp[1]/2.):
         #         continue
-        
+
         xf = np.floor((xf - base[0]) * inv_deltas[0])
         if not xf >= 0.0:
             continue
@@ -418,7 +431,7 @@ def _quant_and_clip_confidence(coords, angles, image,
             continue
         if not yf < clip_vals[1]:
             continue
-        
+
         # Adding 2D 'beamstop' mask functionality to handle the 2x objective lens + scinitaltor issues - SEG 10/28/2023
         # The beamstop parameter is now the shape of a single image
         # The beamstop mask is TRUE on the beamstop/past the edge of scintilator
@@ -448,10 +461,10 @@ def _quant_and_clip_confidence(coords, angles, image,
 # ===============================================================================
 def _test_single_orientation_at_single_coordinate(experiment,image_stack,coord_to_test,orientation_data_to_test,refine_yes_no=0):
     """
-        Goal: 
+        Goal:
 
         Input:
-            
+
         Output:
 
     """
@@ -494,7 +507,7 @@ def _test_single_orientation_at_single_coordinate(experiment,image_stack,coord_t
         bsp = experiment.bsp # Beam stop parameters [vertical center,width] [mm,mm]
         ome_edges = experiment.ome_edges # Omega start stop positions for each frame in image stack
         panel_dims_expanded = [(-10, -10), (10, 10)] # Pixels near the edge of the detector to avoid
-        ref_gparams = np.array([0., 0., 0., 1., 1., 1., 0., 0., 0.]) # Assume grain is unstrained 
+        ref_gparams = np.array([0., 0., 0., 1., 1., 1., 0., 0., 0.]) # Assume grain is unstrained
 
         # Define misorientation grid
         mis_amt = experiment.misorientation_bound_rad # This is the amount of misorientation allowed on one side of the original orientation
@@ -533,7 +546,7 @@ def _test_single_orientation_at_single_coordinate(experiment,image_stack,coord_t
             # Check xy detector positions and omega value to see if intensity exisits
             all_confidence[i] = _quant_and_clip_confidence(det_xy, angles[:, 2], image_stack,
                                             base, inv_deltas, clip_vals, bsp, ome_edges)
-            
+
         # Find the index of the max confidence
         idx = np.where(all_confidence == np.max(all_confidence))[0][0] # Grab just the first instance if there is a tie
 
@@ -546,7 +559,7 @@ def _test_single_orientation_at_single_coordinate(experiment,image_stack,coord_t
         refined_quats = np.atleast_2d(rotations.quatOfExpMap(exp_map))
         [misorientation, a] = rotations.misorientation(original_quats.T,refined_quats.T) # In radians
         misorientation = np.degrees(misorientation)
-    
+
     # Ensure output is the correct size
     if len(np.shape(exp_map)) == 1: exp_map = np.expand_dims(exp_map,0)
     if len(np.shape(confidence)) == 0: confidence = np.expand_dims(confidence,0)
@@ -555,16 +568,16 @@ def _test_single_orientation_at_single_coordinate(experiment,image_stack,coord_t
 
 def _test_single_orientation_at_many_coordinates(experiment,image_stack,coords_to_test,orientation_data_to_test):
     """
-        Goal: 
-            Test a single orientation at a large number of coordinate points to check the 
-                confidence the orientation exists at each coordinate point.  
+        Goal:
+            Test a single orientation at a large number of coordinate points to check the
+                confidence the orientation exists at each coordinate point.
         Input:
-            
+
         Output:
             - Numpy array of size [# of coordinate points] containing a confidence value
-                for each point.  
+                for each point.
     """
-    
+
     # Grab some experiment data
     tD = experiment.tVec_d # Detector X,Y,Z translation (mm)
     rD = experiment.rMat_d # Detector rotation matrix (rad)
@@ -601,14 +614,14 @@ def _test_single_orientation_at_many_coordinates(experiment,image_stack,coords_t
 
 def _test_many_orientations_at_single_coordinate(experiment,image_stack,coord_to_test,orientation_data_to_test):
     """
-        Goal: 
+        Goal:
             Test many orientations against a single coordinate to determine which orientation is the best fit.  If desired
-                this function can call the refinement funciton such that it produces the best orientation.  
+                this function can call the refinement funciton such that it produces the best orientation.
         Input:
-            
+
         Output:
     """
-    
+
     # Grab some experiment data
     tD = experiment.tVec_d # Detector X,Y,Z translation (mm)
     rD = experiment.rMat_d # Detector rotation matrix (rad)
@@ -652,13 +665,13 @@ def _test_many_orientations_at_single_coordinate(experiment,image_stack,coord_to
 
 def _test_many_orientations_at_many_coordinates(experiment,image_stack,coordinates_to_test,orientation_data_to_test,refine_yes_no=0,start=0,stop=0):
     """
-        Goal: 
+        Goal:
             This is a multiprocessing splitter
         Input:
-            
+
         Output:
     """
-    # Check which mode we are in.  
+    # Check which mode we are in.
     # If there are more coords than oris - we have chunked coords - run test_many_orientations_at_single_coordinate
     # If there are more oris than coords - we have chunked oris - run test_single_orientation_at_many_coordinates
     # How many orientations?
@@ -713,7 +726,7 @@ def _test_many_orientations_at_many_coordinates(experiment,image_stack,coordinat
             all_exp_maps[to_replace,:] = exp_maps[to_replace]
             all_confidence[to_replace] = confidence[to_replace]
             all_idx[to_replace] = start + i
-    
+
     # Refine if we need to, we have one orientation per coordinate point
     if refine_yes_no == 1:
         # Not sure if it is faster to pull the orientation info or compute it
@@ -726,7 +739,7 @@ def _test_many_orientations_at_many_coordinates(experiment,image_stack,coordinat
 
 def _precompute_diffraction_data_of_single_orientation(experiment,exp_map):
     """
-        Goal: 
+        Goal:
             Read in one orientations and pre-compute all needed diffraction information on one CPU.
         Input:
             experiment: Packaged information holding experimental details
@@ -734,7 +747,7 @@ def _precompute_diffraction_data_of_single_orientation(experiment,exp_map):
             exp_maps_to_compute: exponential maps of each orientation to process
                 Must of shape of (3) or (n_oris,3)
         Output:
-            all_exp_maps: exponential maps of each orientation 
+            all_exp_maps: exponential maps of each orientation
                 Will be of shape (n_oris,3)
             all_angles: list of eta, theta, omega data for each diffraction event of each orientation
                 Will be of length = n_oris
@@ -742,7 +755,7 @@ def _precompute_diffraction_data_of_single_orientation(experiment,exp_map):
                 Will be of length = n_oris
             all_gvec_cs: list of g-vectors for each diffraction event for each grain
                 Will be of length = n_oris
-            all_rMat_c: rotation matrices of each orientation 
+            all_rMat_c: rotation matrices of each orientation
                 Will be of shape (n_oris,3,3)
     """
     # Handle incoming size of exp_map
@@ -778,7 +791,7 @@ def _precompute_diffraction_data_of_single_orientation(experiment,exp_map):
 
 def _precompute_diffraction_data_of_many_orientations(experiment,exp_maps,start=0,stop=0):
     """
-        Goal: 
+        Goal:
             Read in many orientations and pre-compute all needed diffraction information on one CPU.
         Input:
             experiment: Packaged information holding experimental details
@@ -786,7 +799,7 @@ def _precompute_diffraction_data_of_many_orientations(experiment,exp_maps,start=
             exp_maps_to_compute: exponential maps of each orientation to process
                 Must of shape of (n_oris,3)
         Output:
-            all_exp_maps: exponential maps of each orientation 
+            all_exp_maps: exponential maps of each orientation
                 Will be of shape (n_oris,3)
             all_angles: list of eta, theta, omega data for each diffraction event of each orientation
                 Will be of length = n_oris
@@ -794,7 +807,7 @@ def _precompute_diffraction_data_of_many_orientations(experiment,exp_maps,start=
                 Will be of length = n_oris
             all_gvec_cs: list of g-vectors for each diffraction event for each grain
                 Will be of length = n_oris
-            all_rMat_c: rotation matrices of each orientation 
+            all_rMat_c: rotation matrices of each orientation
                 Will be of shape (n_oris,3,3)
     """
 
@@ -811,7 +824,7 @@ def _precompute_diffraction_data_of_many_orientations(experiment,exp_maps,start=
     if start == 0 and stop == 0:
         # We are not in multiprocessing mode
         n_oris = np.shape(exp_maps)[0]
-    else: 
+    else:
         # We are in multiprocessing mode and need to pull only some of the exp_maps
         exp_maps = exp_maps[start:stop,:]
         n_oris = np.shape(exp_maps)[0]
@@ -855,7 +868,7 @@ def _precompute_diffraction_data_of_many_orientations(experiment,exp_maps,start=
 # ===============================================================================
 def precompute_diffraction_data(experiment,controller,exp_maps_to_precompute):
     """
-        Goal: 
+        Goal:
             Read in at least one orientation and pre-compute all needed diffraction information
                 on as many CPUs as desired.
         Input:
@@ -864,7 +877,7 @@ def precompute_diffraction_data(experiment,controller,exp_maps_to_precompute):
             exp_maps_to_compute: exponential maps of each orientation to process
                 Must of shape of either (3) or (n_oris,3)
         Output:
-            all_exp_maps: exponential maps of each orientation 
+            all_exp_maps: exponential maps of each orientation
                 Will be of shape (n_oris,3)
             all_angles: list of eta, theta, omega data for each diffraction event of each orientation
                 Will be of length = n_oris
@@ -872,7 +885,7 @@ def precompute_diffraction_data(experiment,controller,exp_maps_to_precompute):
                 Will be of length = n_oris
             all_gvec_cs: list of g-vectors for each diffraction event for each grain
                 Will be of length = n_oris
-            all_rMat_c: rotation matrices of each orientation 
+            all_rMat_c: rotation matrices of each orientation
                 Will be of shape (n_oris,3,3)
     """
     # How many orientations?
@@ -950,10 +963,10 @@ def precompute_diffraction_data(experiment,controller,exp_maps_to_precompute):
 
 def test_orientations_at_coordinates(experiment,controller,image_stack,orientation_data_to_test,coordinates_to_test,refine_yes_no=0,return_misorientation=0):
     """
-        Goal: 
-            
+        Goal:
+
         Input:
-            
+
         Output:
 
     """
@@ -1078,10 +1091,10 @@ def test_orientations_at_coordinates(experiment,controller,image_stack,orientati
 
 def load_all_images(filenames,controller):
     """
-        Goal: 
-            
+        Goal:
+
         Input:
-            
+
         Output:
 
     """
@@ -1139,12 +1152,12 @@ def load_all_images(filenames,controller):
 
     return raw_image_stack
 
-def remove_median_darkfields(raw_image_stack,controller,median_size_through_omega):
+def remove_median_darkfields(raw_image_stack, controller, configuration):
     """
-        Goal: 
-            
+        Goal:
+
         Input:
-            
+
         Output:
 
     """
@@ -1154,56 +1167,64 @@ def remove_median_darkfields(raw_image_stack,controller,median_size_through_omeg
     n_slices = np.shape(raw_image_stack)[2]
     # How many CPUs?
     ncpus = controller.get_process_count()
+    # Pull configuration data
+    median_size_through_omega = configuration.images.processing.omega_kernel_size
+    global_threshold = configuration.images.processing.threshold
     # Single process or multi-thread?
     if ncpus == 1:
-        # Just go ahead and load the images
-        print(f'Removing dynamic median dark from {n_slices} slices with a single CPU.')
-        cleaned_image_stack, start, stop = _remove_dynamic_median(raw_image_stack,median_size_through_omega,0,n_slices)
+        print(
+            f'Subtracting dynamic darkfield from {n_slices} slices with a single CPU.')
+        cleaned_image_stack, start, stop = _remove_dynamic_median(
+            raw_image_stack, median_size_through_omega, 0, n_slices)
     else:
-        # Generate the blank image stack
-        cleaned_image_stack = np.zeros(np.shape(raw_image_stack),raw_image_stack.dtype)
-        # Define the chunk size
+        cleaned_image_stack = np.zeros(
+            np.shape(raw_image_stack), raw_image_stack.dtype)
         chunk_size = controller.get_chunk_size()
         if chunk_size == -1:
             chunk_size = int(np.ceil(n_slices/ncpus))
-        # Create chunking
         num_chunks = int(np.ceil(n_slices/chunk_size))
         chunks = np.arange(num_chunks)
-        starts = np.zeros(num_chunks,dtype=int)
-        stops = np.zeros(num_chunks,dtype=int)
+        starts = np.zeros(num_chunks, dtype=int)
+        stops = np.zeros(num_chunks, dtype=int)
         for i in np.arange(num_chunks):
             starts[i] = i*chunk_size
             stops[i] = i*chunk_size + chunk_size
             if stops[i] >= n_slices:
                 stops[i] = n_slices
-        print(f'Removing dynamic median dark from {n_slices} slices with {ncpus} CPUs and {num_chunks} chunks of size {chunk_size}.')
-        # Package all inputs to the distributor function
-        state = (starts,stops,raw_image_stack,median_size_through_omega)
-        # Start the multiprocessing loop
+        print(
+            f'Subtracting dynamic darkfield from {n_slices} slices with {ncpus} CPUs and {num_chunks} chunks of size {chunk_size}.')
+        state = (starts, stops, raw_image_stack, median_size_through_omega)
         set_multiprocessing_method(controller.multiprocessing_start_method)
-        with multiprocessing_pool(ncpus,state) as pool:
-            for vals1, start, stop in pool.imap_unordered(_remove_median_darkfield_distributor,chunks):
-                # Grab the data as each CPU drops it
-                cleaned_image_stack[:,:,start:stop] = vals1
-                # Clean up
+        with multiprocessing_pool(ncpus, state) as pool:
+            for vals1, start, stop in pool.imap_unordered(_remove_median_darkfield_distributor, chunks):
+                cleaned_image_stack[:, :, start:stop] = vals1
                 del vals1, start, stop
 
-    # How long did it take?
+    # Remove the global threshold
+    if global_threshold > 0:
+        print('Dynamic darkfield generated and subtracted.')
+        print(f'Subtracting global threshold of {global_threshold}.')
+        mask = cleaned_image_stack <= global_threshold
+        cleaned_image_stack[mask] = 0
+        cleaned_image_stack[~mask] = cleaned_image_stack[~mask] - global_threshold
+
     t1 = timeit.default_timer()
     elapsed = t1-t0
     if elapsed < 60.0:
-        print(f'Removed dynamic median dark from {n_slices} slices in {np.round(elapsed,1)} seconds ({elapsed/n_slices} seconds per slice).')
+        print(
+            f'Subtracted dynamic darkfield and global threshold from {n_slices} slices in {np.round(elapsed,1)} seconds ({elapsed/n_slices} seconds per slice).')
     else:
-        print(f'Removed dynamic median dark from {n_slices} slices in {np.round(elapsed/60,1)} minutes ({elapsed/n_slices} seconds per slice).')
+        print(
+            f'Subtracted dynamic darkfield and global threshold from {n_slices} slices in {np.round(elapsed/60,1)} minutes ({elapsed/n_slices} seconds per slice).')
 
     return cleaned_image_stack
 
 def filter_and_binarize_images(cleaned_image_stack,controller,filter_parameters):
     """
-        Goal: 
-            
+        Goal:
+
         Input:
-            
+
         Output:
 
     """
@@ -1293,7 +1314,7 @@ def _remove_median_darkfield_distributor(chunk):
     stops = _mp_state[1]
     return _remove_dynamic_median(*_mp_state[2:], start=starts[chunk], stop=stops[chunk])
 
-def _filter_and_binarize_images_distributor(chunk):    
+def _filter_and_binarize_images_distributor(chunk):
     # Where are we pulling data from within the lists?
     starts = _mp_state[0]
     stops = _mp_state[1]
@@ -1344,47 +1365,113 @@ def gen_nf_test_grid_vertical(cross_sectional_dim, v_bnds, voxel_spacing):
 
     return test_crds, n_crds, Xs, Ys, Zs
 
-def generate_test_coordinates(cross_sectional_dim, v_bnds, voxel_spacing,
-                              mask_data_file=None,mask_vert_offset=0.0):
-    if mask_data_file is not None:
-        # Load the mask
-        mask_data = np.load(mask_data_file)
+def generate_test_coordinates(
+    cross_sectional_dim,
+    v_bnds,
+    voxel_spacing,
+    mask_data_file=None,
+    vertical_motor_position=0.0
+):
+    """
+    Generate a set of test coordinates for near-field grain mapping.
 
+    This function creates a grid of coordinates within the specified cross-sectional
+    dimensions and vertical bounds, optionally applying a sample mask. The mask can
+    be loaded from a file and shifted according to the vertical motor position.
+
+    Parameters
+    ----------
+    cross_sectional_dim : float
+        The size (in mm) of the cross-sectional area perpendicular to the beam.
+    v_bnds : tuple or list of float
+        The vertical bounds (min, max) in mm for the grid. If v_bnds[0] == v_bnds[1],
+        a single layer is produced.
+    voxel_spacing : float
+        Spacing (in mm) between grid points.
+    mask_data_file : str, optional
+        Path to a .npz file containing a sample mask and coordinate arrays.
+        If None, no mask is applied and the full grid is used.
+        The mask file must contain arrays: 'mask', 'Xs', 'Ys', 'Zs', 'voxel_spacing'.
+    vertical_motor_position : float, optional
+        Offset (in mm) to apply to the vertical position of the mask coordinates.
+        This allows alignment of the mask with the actual sample position.
+
+    Returns
+    -------
+    Xs : ndarray
+        3D array of X coordinates for the test grid.
+    Ys : ndarray
+        3D array of Y coordinates for the test grid.
+    Zs : ndarray
+        3D array of Z coordinates for the test grid.
+    mask : ndarray
+        Boolean mask array indicating valid sample regions.
+    test_coordinates : ndarray
+        Array of shape (N, 3) containing the selected (X, Y, Z) coordinates
+        for testing (only those inside the mask if mask_data_file is provided).
+
+    Usage Example
+    -------------
+    # Without mask:
+    Xs, Ys, Zs, mask, test_coordinates = generate_test_coordinates(
+        cross_sectional_dim=1.0,
+        v_bnds=(0.0, 1.0),
+        voxel_spacing=0.05
+    )
+
+    # With mask:
+    Xs, Ys, Zs, mask, test_coordinates = generate_test_coordinates(
+        cross_sectional_dim=1.0,
+        v_bnds=(0.0, 1.0),
+        voxel_spacing=0.05,
+        mask_data_file='my_mask.npz',
+        vertical_motor_position=0.2
+    )
+    """
+
+    if mask_data_file is not None:
+        # Load the mask and associated coordinate arrays from file
+        mask_data = np.load(mask_data_file)
         mask_full = mask_data['mask']
         Xs_mask = mask_data['Xs']
-        Ys_mask = mask_data['Ys']-(mask_vert_offset)
+        Ys_mask = mask_data['Ys'] + vertical_motor_position  # Apply vertical offset
         Zs_mask = mask_data['Zs']
         voxel_spacing = mask_data['voxel_spacing']
 
-        # need to think about how to handle a single layer in this context
+        # Find which layers are within the requested vertical bounds
         tomo_layer_centers = np.squeeze(Ys_mask[:, 0, 0])
         above = np.where(tomo_layer_centers >= v_bnds[0])
         below = np.where(tomo_layer_centers < v_bnds[1])
-
         in_bnds = np.intersect1d(above, below)
 
+        # Select only the relevant layers
         mask = mask_full[in_bnds]
         Xs = Xs_mask[in_bnds]
         Ys = Ys_mask[in_bnds]
         Zs = Zs_mask[in_bnds]
 
+        # Flatten the coordinate arrays for selected points
         test_crds_full = np.vstack([Xs.flatten(), Ys.flatten(), Zs.flatten()]).T
-        
+
+        # Only use coordinates where mask is True
         to_use = np.squeeze(np.where(mask.flatten()))
     else:
+        # No mask: generate a full grid within the bounds
         test_crds_full, n_crds, Xs, Ys, Zs = gen_nf_test_grid(
             cross_sectional_dim, v_bnds, voxel_spacing)
         to_use = np.arange(len(test_crds_full))
-        mask = np.ones(Xs.shape,bool)
+        mask = np.ones(Xs.shape, bool)
 
+    # Select the coordinates to use for testing
     test_coordinates = test_crds_full[to_use, :]
+
     return Xs, Ys, Zs, mask, test_coordinates
 
 # %% ============================================================================
 # DATA COLLECTOR FUNCTIONS
 # ===============================================================================
 # Generate the experiment
-def generate_experiment(grain_out_file,det_file,mat_file, mat_name, max_tth, comp_thresh, chi2_thresh,omega_edges_deg, 
+def generate_experiment(grain_out_file,det_file,mat_file, mat_name, max_tth, comp_thresh, chi2_thresh,omega_edges_deg,
                        beam_stop_parms,voxel_spacing, vertical_bounds,misorientation_bnd=0.0, misorientation_spacing=0.25,
                        cross_sectional_dim=1.3):
     # Load the grains.out data
@@ -1433,10 +1520,10 @@ def generate_experiment(grain_out_file,det_file,mat_file, mat_name, max_tth, com
     # Detector transformation parameters
 
     # Some detector tilt information
-    # xfcapi.makeRotMatOfExpMap(tilt) = xfcapi.makeDetectorRotMat(rotations.angles_from_rmat_xyz(xfcapi.makeRotMatOfExpMap(tilt))) where tilt are directly read in from the .yaml as a exp_map 
-    rMat_d = panel.rmat # Generated by xfcapi.makeRotMatOfExpMap(tilt) where tilt are directly read in from the .yaml as a exp_map 
+    # xfcapi.makeRotMatOfExpMap(tilt) = xfcapi.makeDetectorRotMat(rotations.angles_from_rmat_xyz(xfcapi.makeRotMatOfExpMap(tilt))) where tilt are directly read in from the .yaml as a exp_map
+    rMat_d = panel.rmat # Generated by xfcapi.makeRotMatOfExpMap(tilt) where tilt are directly read in from the .yaml as a exp_map
     tilt_angles_xyzp = np.asarray(rotations.angles_from_rmat_xyz(rMat_d)) # These are needed for xrdutil.simulateGVecs where they are converted to a rotation matrix via xfcapi.makeDetectorRotMat(detector_params[:3]) which reads in tiltAngles = [gamma_Xl, gamma_Yl, gamma_Zl] in radians
-    
+
     tVec_d = panel.tvec
     # Pixel information
     row_ps = panel.pixel_size_row
@@ -1538,13 +1625,13 @@ def process_raw_data(raw_confidence,raw_idx,volume_dims,mask=None,id_remap=None,
     if mask is None:
         mask = np.ones(volume_dims,bool)
     confidence_map[mask] = raw_confidence
-    
+
     # Apply remap if there is one
     if id_remap is not None:
         mapped_idx = id_remap[raw_idx]
     else:
         mapped_idx = raw_idx
-    
+
     # Assign the indexing to the correct voxel
     grain_map = np.zeros(volume_dims)
     grain_map[mask] = mapped_idx
@@ -1576,11 +1663,11 @@ def write_to_h5(file_dir,file_name,data_array,data_name):
 
 # Writes an xdmf how Paraview requires
 def xmdf_writer(file_dir,file_name):
-    
+
     # !!!!!!!!!!!!!!!!!!!!!
     # The below function has not been unit tested - use at your own risk
     # !!!!!!!!!!!!!!!!!!!!!
-    
+
     hf = h5py.File(os.path.join(file_dir,file_name)+'.h5','r')
     k = list(hf.keys())
     totalsets = len(k)
@@ -1596,7 +1683,7 @@ def xmdf_writer(file_dir,file_name):
             print('An array has greater than 4 dimensions - this writer cannot handle that')
             hf.close()
         dims[i,0:len(s)] = s
-        
+
     hf.close()
 
     filename = os.path.join(file_dir,file_name) + '.xdmf'
@@ -1646,9 +1733,9 @@ def xmdf_writer(file_dir,file_name):
 
 # Data writer as either .npz or .h5 (wiht no xdmf)
 def save_nf_data(save_dir,save_stem,grain_map,confidence_map,Xs,Ys,Zs,ori_list,tomo_mask=None,id_remap=None,save_type=['npz']):
-    
+
     # H5 functionality added by SEG 8/3/2023
-    
+
     print('Saving grain map data...')
     if id_remap is not None:
         if save_type[0] == 'hdf5':
@@ -1695,7 +1782,7 @@ def save_nf_data(save_dir,save_stem,grain_map,confidence_map,Xs,Ys,Zs,ori_list,t
 
 # Saves the general NF output in a Paraview interpretable format
 def save_nf_data_for_paraview(file_dir,file_stem,grain_map,confidence_map,Xs,Ys,Zs,ori_list,mat,tomo_mask=None,id_remap=None,diffraction_volume_number=None,misorientation_map=None):
-    
+
     print('Writing HDF5 data...')
     write_to_h5(file_dir,file_stem + '_grain_map_data',np.transpose(np.transpose(confidence_map,[1,0,2]),[2,1,0]),'confidence')
     write_to_h5(file_dir,file_stem + '_grain_map_data',np.transpose(np.transpose(grain_map,[1,0,2]),[2,1,0]),'grain_map')
@@ -1766,7 +1853,7 @@ def generate_ori_map(grain_map, exp_maps,mat,id_remap=None):
     return rgb_image
 
 # An IPF and confidence map plotter
-def plot_ori_map(grain_map, confidence_map, Xs, Zs, exp_maps, 
+def plot_ori_map(grain_map, confidence_map, Xs, Zs, exp_maps,
                  layer_no,mat,id_remap=None, conf_thresh=None):
     # Init
     grains_plot=np.squeeze(grain_map[layer_no,:,:])
@@ -1785,7 +1872,7 @@ def plot_ori_map(grain_map, confidence_map, Xs, Zs, exp_maps,
             rmats = xfcapi.makeRotMatOfExpMap(ori)
             rgb = mat.unitcell.color_orientations(
                 rmats, ref_dir=np.array([0., 1., 0.]))
-            
+
             rgb_image[this_grain[0], this_grain[1], 0] = rgb[0][0]
             rgb_image[this_grain[0], this_grain[1], 1] = rgb[0][1]
             rgb_image[this_grain[0], this_grain[1], 2] = rgb[0][2]
@@ -1881,15 +1968,15 @@ def plot_ori_map(grain_map, confidence_map, Xs, Zs, exp_maps,
 # DIFFRACTION VOLUME STITCHERS
 # ===============================================================================
 # Stich individual diffraction volumes
-def stitch_nf_diffraction_volumes(output_dir,output_stem,filepaths,material, 
-                                  offsets,voxel_size,overlap=0,use_mask=0,ori_tol=0.0,remove_small_grains_under=0, 
+def stitch_nf_diffraction_volumes(output_dir,output_stem,filepaths,material,
+                                  offsets,voxel_size,overlap=0,use_mask=0,ori_tol=0.0,remove_small_grains_under=0,
                                   average_orientation=0, save_npz=0,save_h5=0,save_grains_out=0,suppress_plots=0,
                                   single_or_multiple_grains_out_files=0):
     """
-        Goal: 
-            
+        Goal:
+
         Input:
-            
+
         Output:
 
     """
@@ -1905,7 +1992,7 @@ def stitch_nf_diffraction_volumes(output_dir,output_stem,filepaths,material,
     nf_to_ff_id_map = []
     if use_mask == 1:
         masks = []
-    
+
     # Load data into lists
     for i, p in enumerate(filepaths):
         nf_recon = np.load(p)
@@ -1956,7 +2043,7 @@ def stitch_nf_diffraction_volumes(output_dir,output_stem,filepaths,material,
                 mask_full[start:stop,:,:] = masks[vol][overlap:dims[0]-overlap,:,:]
             start = start + dims[0] - overlap*2
             stop = stop + dims[0] - overlap*2
-        
+
         # Now handle the overlap regions
         # Where are they?  They are the overlap voxels on either side of the volume division,
         # where the division-overlap region has to be checked against the first overlap voxels
@@ -2017,9 +2104,9 @@ def stitch_nf_diffraction_volumes(output_dir,output_stem,filepaths,material,
         print('Data voxeleated.')
         print('Merging grains.')
 
-        # Grain merge methodology: calculate the misorientation of all voxels in volume and threshold.  
-            # Detect only the blob in which the current voxel is located - call that the grain.  
-            # Remove those grain's voxels from the test area and move on.  Do until we have nothing left.  
+        # Grain merge methodology: calculate the misorientation of all voxels in volume and threshold.
+            # Detect only the blob in which the current voxel is located - call that the grain.
+            # Remove those grain's voxels from the test area and move on.  Do until we have nothing left.
         grain_identification_complete = np.zeros(dims,dtype=bool)
         grain_map_merged = np.zeros(dims,dtype=np.int32)
         grain_map_merged[:] = -2 # Define everything to -2
@@ -2061,13 +2148,13 @@ def stitch_nf_diffraction_volumes(output_dir,output_stem,filepaths,material,
                         if average_orientation == 1:
                             # This has not been implemented since we currently only work with grain averaged
                             # orientations.  There may be a slight difference between nf scans but it *should*
-                            # be negligible for the model HEDM materials we work with.  
+                            # be negligible for the model HEDM materials we work with.
                             print('Orientation averaging not implemented.  Useing single orientation.')
                             print('Implement orientation averaging if you need it.')
                             new_ori = ori
                         else:
                             new_ori = ori
-                        
+
                         # We should not geneate any overlap but let's double check
                         if np.sum(grain_identification_complete[voxels_to_merge]) > 0:
                             print('We are trying to put a grain where one already exists...')
@@ -2084,7 +2171,7 @@ def stitch_nf_diffraction_volumes(output_dir,output_stem,filepaths,material,
         # A check
         if np.sum(np.isin(grain_map_merged,-2)) != 0:
             print('Looks like not every voxel was merged...')
-        
+
         num_grains = grain # That +1 above handles grain 0
         new_ids = np.arange(num_grains)
         new_sizes = np.zeros(num_grains)
@@ -2140,7 +2227,7 @@ def stitch_nf_diffraction_volumes(output_dir,output_stem,filepaths,material,
                                 mask[y,x,z] = 0
                                 m,c = scipy.stats.mode(working_grain_map[mask], axis=None, keepdims=False)
                                 working_grain_map[y,x,z] = m
-                
+
                 print('Done removing grains smaller than ' + str(remove_small_grains_under) + ' voxels')
 
                 # Quick double check
@@ -2248,7 +2335,7 @@ def stitch_nf_diffraction_volumes(output_dir,output_stem,filepaths,material,
                      ori_list=final_orientations,id_remap=np.unique(final_grain_map),
                      diffraction_volume_number=diffraction_volume,vertical_position_full=vertical_position_full,
                      tomo_mask=None,diffrction_volume_number=diffraction_volume)
-    
+
     if save_grains_out == 1:
         # Find centroids for each grain with respect to the whole volume and each individual layer
         print('Finding centroids for the grains.out.')
@@ -2305,7 +2392,7 @@ def generate_low_confidence_test_coordinates(starting_reconstruction,confidence_
     # Data path must point to a npz save of either a merged volume or single volume
     # Within this file there MUST be:
         # confidence, X, Y, Z, and mask
-        # If you do not have a mask, make one.  
+        # If you do not have a mask, make one.
 
     # Load the data
     confidence_map = starting_reconstruction['confidence_map']
@@ -2419,157 +2506,341 @@ def uniform_fundamental_zone_sampling(point_group_number,average_angular_spacing
 # %% ============================================================================
 # CALIBRATION FUNCTIONS
 # ===============================================================================
-def calibrate_parameter(experiment,controller,image_stack,calibration_parameters):
-    # Which parameter?
-    experiment_parameter_index = [3,4,5,0,1,2,6]
-    parameter_number = experiment_parameter_index[calibration_parameters[0]] # 0=X, 1=Y, 2=Z, 3=RX, 4=RY, 5=RZ, 6=chi
-    # How many iterations
+def calibrate_parameter(
+    experiment,
+    controller,
+    image_stack,
+    calibration_parameters
+):
+    """
+    Calibrate a detector or experiment parameter by maximizing the summed confidence
+    over a test grid, using a grid search.
+
+    This function scans a specified parameter (detector translation, tilt, chi, or omega correction)
+    over a user-defined range and number of steps. At each step, it updates the experiment,
+    runs the orientation-confidence test, and records the summed confidence. The value
+    yielding the highest summed confidence is selected as optimal.
+
+    Parameters
+    ----------
+    experiment : argparse.Namespace
+        The experiment object containing all experiment and detector settings.
+        This object will be updated in-place with the optimal parameter value.
+    controller : ProcessController
+        Multiprocessing controller for distributing work.
+    image_stack : ndarray
+        3D stack of processed images.
+    calibration_parameters : list or tuple
+        List specifying the calibration scan:
+        - calibration_parameters[0]: int
+            Index of the parameter to scan:
+                0 = Detector X translation (horizontal center)
+                1 = Detector Y translation (vertical center)
+                2 = Detector Z translation (distance)
+                3 = Detector X tilt (deg)
+                4 = Detector Y tilt (deg)
+                5 = Detector Z tilt (deg)
+                6 = Chi angle (deg)
+                7 = Omega correction (deg)
+        - calibration_parameters[1]: int
+            Number of steps (iterations) in the scan.
+        - calibration_parameters[2]: float
+            Start value for the parameter.
+        - calibration_parameters[3]: float
+            Stop value for the parameter.
+
+    Returns
+    -------
+    experiment : argparse.Namespace
+        The experiment object with the calibrated parameter updated.
+
+    Usage Example
+    -------------
+    # Calibrate detector Z (distance) from 100.0 to 102.0 mm in 11 steps:
+    calibration_parameters = [2, 11, 100.0, 102.0]
+    experiment = calibrate_parameter(
+        experiment, controller, image_stack, calibration_parameters
+    )
+
+    Notes
+    -----
+    - This function modifies the experiment object in-place.
+    - The function plots the confidence curve and the resulting confidence map.
+    - For omega correction, the experiment's omega edge values are shifted and all
+      downstream calculations use the corrected values.
+    - The function supports scanning a single value (iterations == 1) or a range.
+    """
+
+    # Map user parameter index to experiment parameter index
+    experiment_parameter_index = [3, 4, 5, 0, 1, 2, 6, 7]
+    parameter_number = experiment_parameter_index[calibration_parameters[0]]
     iterations = calibration_parameters[1]
-    # Start and stop points
     start = calibration_parameters[2]
     stop = calibration_parameters[3]
-    # Variable name
-    names = ['Detector Horizontal Center (X)',
-             'Detector Vertical Center (Y)',
-             'Detector Distance (Z)',
-             'Detector X Rotation (RX)',
-             'Detector Y Rotation (RY)',
-             'Detector Z Rotation (RZ)',
-             'Chi Angle']
+    names = [
+        'Detector Horizontal Center (X)',
+        'Detector Vertical Center (Y)',
+        'Detector Distance (Z)',
+        'Detector X Rotation (RX)',
+        'Detector Y Rotation (RY)',
+        'Detector Z Rotation (RZ)',
+        'Chi Angle',
+        'Omega Correction'
+    ]
     parameter_name = names[calibration_parameters[0]]
 
-    # Copy the original experiment to work with
+    # Work on a copy to avoid modifying the original until the best value is found
     working_experiment = copy.deepcopy(experiment)
 
-    # Calculate the test coordinates
+    # Generate test coordinates for calibration
     if parameter_number == 4:
-        # Testing vertical detector translation
-        test_crds_full, n_crds, Xs, Ys, Zs = gen_nf_test_grid_vertical(experiment.cross_sectional_dimensions, experiment.vertical_bounds, experiment.voxel_spacing)
-        to_use = np.arange(len(test_crds_full))
-        test_coordinates = test_crds_full[to_use, :]
+        # Calibrating vertical detector translation: use vertical grid
+        test_crds_full, n_crds, Xs, Ys, Zs = gen_nf_test_grid_vertical(
+            experiment.cross_sectional_dimensions,
+            experiment.vertical_bounds,
+            experiment.voxel_spacing
+        )
     else:
-        # Testing any of the others
-        test_crds_full, n_crds, Xs, Ys, Zs = gen_nf_test_grid(experiment.cross_sectional_dimensions, [-experiment.voxel_spacing/2,experiment.voxel_spacing], experiment.voxel_spacing)
-        to_use = np.arange(len(test_crds_full))
-        test_coordinates = test_crds_full[to_use, :]
+        # Calibrating any other parameter: use horizontal grid
+        test_crds_full, n_crds, Xs, Ys, Zs = gen_nf_test_grid(
+            experiment.cross_sectional_dimensions,
+            [-experiment.voxel_spacing/2, experiment.voxel_spacing],
+            experiment.voxel_spacing
+        )
+    to_use = np.arange(len(test_crds_full))
+    test_coordinates = test_crds_full[to_use, :]
 
-    # Check if we are iterating this variable
-    if iterations > 0:
-        # Initialize
-        count = 0
+    # Scan over parameter range
+    if iterations > 1:
         confidence_to_plot = np.zeros(iterations)
-        parameter_space = np.linspace(start,stop,iterations)
-        # Tell the user what we are doing
-        print(f'Scanning over {parameter_name} from {start} to {stop} with {iterations} steps of {parameter_space[1]-parameter_space[0]}')
-        # Loop over the parameter space
-        for val in parameter_space:
-            # Change experiment
+        parameter_space = np.linspace(start, stop, iterations)
+        print(
+            f'Scanning over {parameter_name} from {start} to {stop} with {iterations} steps of {parameter_space[1] - parameter_space[0]:.4f}'
+        )
+        for count, val in enumerate(parameter_space):
             print(f'Testing {parameter_name} at: {val}')
-            if parameter_number > 2 and parameter_number < 6: 
-                # A translation - update the working_experiment
+            # Update the relevant parameter in the experiment copy
+            if parameter_number > 2 and parameter_number < 6:
+                # Detector translation (X, Y, Z)
                 working_experiment.detector_params[parameter_number] = val
-                working_experiment.tVec_d[parameter_number-3] = val
+                working_experiment.tVec_d[parameter_number - 3] = val
             elif parameter_number <= 2:
-                # A tilt - update the working_experiment
-                # For user ease, I will have the input parameters in degrees about each axis
-                # Some detector tilt information
-                # xfcapi.makeRotMatOfExpMap(tilt) = xfcapi.makeDetectorRotMat(rotations.angles_from_rmat_xyz(xfcapi.makeRotMatOfExpMap(tilt))) where tilt are directly read in from the .yaml as a exp_map
-                # Grab original rotations
-                xyzp_tilts_deg = np.multiply(rotations.angles_from_rmat_xyz(experiment.rMat_d),180.0/np.pi) # Passive (extrinsic) tilts XYZ
-                # Reset the current value of the desired tilt
+                # Detector tilt (X, Y, Z)
+                xyzp_tilts_deg = np.multiply(
+                    rotations.angles_from_rmat_xyz(experiment.rMat_d), 180.0/np.pi
+                )
                 xyzp_tilts_deg[parameter_number] = val
-                # Define new rMat_d
-                rMat_d = xfcapi.makeDetectorRotMat(np.multiply(xyzp_tilts_deg,np.pi/180.0))
-                # Update the working_experiment
+                rMat_d = xfcapi.makeDetectorRotMat(
+                    np.multiply(xyzp_tilts_deg, np.pi/180.0)
+                )
                 working_experiment.rMat_d = rMat_d
-                working_experiment.detector_params[0:3] = np.multiply(xyzp_tilts_deg,np.pi/180.0)
-            else:
+                working_experiment.detector_params[0:3] = np.multiply(
+                    xyzp_tilts_deg, np.pi/180.0
+                )
+            elif parameter_number == 6:
                 # Chi angle
-                working_experiment.chi = val*np.pi/180.0
-                working_experiment.detector_params[6] = val*np.pi/180.0
+                working_experiment.chi = val * np.pi/180.0
+                working_experiment.detector_params[6] = val * np.pi/180.0
+            elif parameter_number == 7:
+                # Omega correction
+                working_experiment = load_omegas_from_npz_and_correct(
+                    working_experiment, omega_shift_deg=val
+                )
 
-            # Precompute orientaiton information (should need this for all, but it effects only chi?)
-            precomputed_orientation_data = precompute_diffraction_data(working_experiment,controller,experiment.exp_maps)
-            # Run the test
-            raw_exp_maps, raw_confidence, raw_idx = test_orientations_at_coordinates(working_experiment,controller,image_stack,precomputed_orientation_data,test_coordinates,refine_yes_no=0)
-            grain_map, confidence_map = process_raw_data(raw_confidence,raw_idx,Xs.shape,mask=None,id_remap=experiment.remap)
-            
-            # Pull the sum of the confidence map
+            # Precompute orientation data and evaluate confidence
+            precomputed_orientation_data = precompute_diffraction_data(
+                working_experiment, controller, experiment.exp_maps
+            )
+            raw_exp_maps, raw_confidence, raw_idx = test_orientations_at_coordinates(
+                working_experiment, controller, image_stack,
+                precomputed_orientation_data, test_coordinates, refine_yes_no=0
+            )
+            grain_map, confidence_map = process_raw_data(
+                raw_confidence, raw_idx, Xs.shape, mask=None, id_remap=experiment.remap
+            )
             confidence_to_plot[count] = np.sum(confidence_map)
-            count = count + 1
-        
-        # Where was the center found?  
-        # Weighted sum - does not work great
-        #a = z_space; b = z_conf_to_plot - np.min(z_conf_to_plot); b = b/np.sum(b); working_z = np.sum(np.multiply(a,b)) 
-        # Take the max - It's simple but will not throw any fits if we do not have a nice curve like a fitter might
+
+        # Find parameter value with highest summed confidence
         best_val = parameter_space[np.where(confidence_to_plot == np.max(confidence_to_plot))[0]]
-        
-        # Place the value where it needs to be
-        if parameter_number > 2 and parameter_number < 6: 
-            # A translation - update the working_experiment
+        print(f'Best {parameter_name}: {best_val}')
+        # Update the original experiment with the optimal value
+        if parameter_number > 2 and parameter_number < 6:
             experiment.detector_params[parameter_number] = best_val
-            experiment.tVec_d[parameter_number-3] = best_val
+            experiment.tVec_d[parameter_number - 3] = best_val
         elif parameter_number <= 2:
-            # Tilt
-            # For user ease, I will have the input parameters in degrees about each axis
-            # Some detector tilt information
-            # xfcapi.makeRotMatOfExpMap(tilt) = xfcapi.makeDetectorRotMat(rotations.angles_from_rmat_xyz(xfcapi.makeRotMatOfExpMap(tilt))) where tilt are directly read in from the .yaml as a exp_map
-            # Grab original rotations
-            xyzp_tilts_deg = np.multiply(rotations.angles_from_rmat_xyz(experiment.rMat_d),180.0/np.pi) # Passive (extrinsic) tilts XYZ
-            # Reset the current value of the desired tilt
+            xyzp_tilts_deg = np.multiply(
+                rotations.angles_from_rmat_xyz(experiment.rMat_d), 180.0/np.pi
+            )
             xyzp_tilts_deg[parameter_number] = best_val
-            # Define new rMat_d
-            rMat_d = xfcapi.makeDetectorRotMat(np.multiply(xyzp_tilts_deg,np.pi/180.0))
-            # Update the working_experiment
+            rMat_d = xfcapi.makeDetectorRotMat(
+                np.multiply(xyzp_tilts_deg, np.pi/180.0)
+            )
             experiment.rMat_d = rMat_d
-            experiment.detector_params[0:3] = np.multiply(xyzp_tilts_deg,np.pi/180.0)
-        else:
-            # Chi angle
-            experiment.chi = val*np.pi/180.0
-            experiment.detector_params[6] = val*np.pi/180.0
-        
-        # Plot the detector distance curve
+            experiment.detector_params[0:3] = np.multiply(
+                xyzp_tilts_deg, np.pi/180.0
+            )
+        elif parameter_number == 6:
+            experiment.chi = best_val * np.pi/180.0
+            experiment.detector_params[6] = best_val * np.pi/180.0
+        elif parameter_number == 7:
+            experiment = load_omegas_from_npz_and_correct(
+                experiment, omega_shift_deg=best_val
+            )
+
+        # Plot the confidence curve
+        import matplotlib.pyplot as plt
         plt.figure()
-        plt.plot(parameter_space,confidence_to_plot)
-        plt.plot([best_val,best_val],[np.min(confidence_to_plot),np.max(confidence_to_plot)])
+        plt.plot(parameter_space, confidence_to_plot)
+        plt.axvline(best_val, color='r', linestyle='--')
         plt.title(f'{parameter_name} Confidence Curve')
+        plt.xlabel(parameter_name)
+        plt.ylabel('Summed Confidence')
         plt.show(block=False)
 
-        # Precompute orientaiton information (should need this for all, but it effects only chi?)
-        precomputed_orientation_data = precompute_diffraction_data(experiment,controller,experiment.exp_maps)
-        # Run the test
-        raw_exp_maps, raw_confidence, raw_idx = test_orientations_at_coordinates(experiment,controller,image_stack,precomputed_orientation_data,test_coordinates,refine_yes_no=0)
-        grain_map, confidence_map = process_raw_data(raw_confidence,raw_idx,Xs.shape,mask=None,id_remap=experiment.remap)
-
-        # Plot the new confidence map
+        # Show the resulting confidence map
+        precomputed_orientation_data = precompute_diffraction_data(
+            experiment, controller, experiment.exp_maps
+        )
+        raw_exp_maps, raw_confidence, raw_idx = test_orientations_at_coordinates(
+            experiment, controller, image_stack,
+            precomputed_orientation_data, test_coordinates, refine_yes_no=0
+        )
+        grain_map, confidence_map = process_raw_data(
+            raw_confidence, raw_idx, Xs.shape, mask=None, id_remap=experiment.remap
+        )
         plt.figure()
         if parameter_number == 4:
-            plt.imshow(confidence_map[:,:,0],clim=[0,1])
+            plt.imshow(confidence_map[:, :, 0], clim=[0, 1])
         else:
-            plt.imshow(confidence_map[0,:,:],clim=[0,1])
+            plt.imshow(confidence_map[0, :, :], clim=[0, 1])
+        plt.colorbar()
         plt.title(f'Confidence Map with {parameter_name} = {best_val}')
         plt.show(block=False)
 
-        # Quick update
-        print(f'{parameter_name} found to produce highest confidence at {best_val}.\n\
-              Scanning done.  The experiment has been updated with new value.\n\
-              Update detector file if desired.')
+        # Print YAML-style output for updating detector files
         yaml_vals = experiment.detector_params[0:7]
-        yaml_vals[0:3] = rotations.expMapOfQuat(rotations.quatOfRotMat(experiment.rMat_d))
-        print(f'The updated values for the .ymal are:\n\
-                  transform:\n\
-                    translation:\n\
-                    - {yaml_vals[3]}\n\
-                    - {yaml_vals[4]}\n\
-                    - {yaml_vals[5]}\n\
-                    tilt:\n\
-                    - {yaml_vals[0]}\n\
-                    - {yaml_vals[1]}\n\
-                    - {yaml_vals[2]}\n\
-                    chi:{yaml_vals[6]}')
+        yaml_vals[0:3] = rotations.expMapOfQuat(
+            rotations.quatOfRotMat(experiment.rMat_d)
+        )
+        print(f'The updated values for the .yaml are:\n'
+              f'  transform:\n'
+              f'    translation:\n'
+              f'    - {yaml_vals[3]}\n'
+              f'    - {yaml_vals[4]}\n'
+              f'    - {yaml_vals[5]}\n'
+              f'    tilt:\n'
+              f'    - {yaml_vals[0]}\n'
+              f'    - {yaml_vals[1]}\n'
+              f'    - {yaml_vals[2]}\n'
+              f'    chi: {yaml_vals[6]}\n'
+              f'    omega_correction: {getattr(experiment, "omega_correction", None)}'
+        )
         return experiment
+
+    elif iterations == 1:
+        # Single value test (no scan)
+        val = start
+        print(f'Testing {parameter_name} at: {val}')
+        if parameter_number > 2 and parameter_number < 6:
+            working_experiment.detector_params[parameter_number] = val
+            working_experiment.tVec_d[parameter_number - 3] = val
+        elif parameter_number <= 2:
+            xyzp_tilts_deg = np.multiply(
+                rotations.angles_from_rmat_xyz(experiment.rMat_d), 180.0/np.pi
+            )
+            xyzp_tilts_deg[parameter_number] = val
+            rMat_d = xfcapi.makeDetectorRotMat(
+                np.multiply(xyzp_tilts_deg, np.pi/180.0)
+            )
+            working_experiment.rMat_d = rMat_d
+            working_experiment.detector_params[0:3] = np.multiply(
+                xyzp_tilts_deg, np.pi/180.0
+            )
+        elif parameter_number == 6:
+            working_experiment.chi = val * np.pi/180.0
+            working_experiment.detector_params[6] = val * np.pi/180.0
+        elif parameter_number == 7:
+            working_experiment = load_omegas_from_npz_and_correct(
+                working_experiment, omega_shift_deg=val
+            )
+
+        precomputed_orientation_data = precompute_diffraction_data(
+            working_experiment, controller, experiment.exp_maps
+        )
+        raw_exp_maps, raw_confidence, raw_idx = test_orientations_at_coordinates(
+            working_experiment, controller, image_stack,
+            precomputed_orientation_data, test_coordinates, refine_yes_no=0
+        )
+        grain_map, confidence_map = process_raw_data(
+            raw_confidence, raw_idx, Xs.shape, mask=None, id_remap=experiment.remap
+        )
+        confidence_to_plot = np.sum(confidence_map)
+        plt.figure()
+        if parameter_number == 4:
+            plt.imshow(confidence_map[:, :, 0], clim=[0, 1])
+        else:
+            plt.imshow(confidence_map[0, :, :], clim=[0, 1])
+        plt.title(f'Confidence Map with {parameter_name} = {val}')
+        plt.colorbar()
+        plt.show(block=False)
+
+        yaml_vals = working_experiment.detector_params[0:7]
+        yaml_vals[0:3] = rotations.expMapOfQuat(
+            rotations.quatOfRotMat(working_experiment.rMat_d)
+        )
+        print(f'The parameter values tested were:\n'
+              f'  transform:\n'
+              f'    translation:\n'
+              f'    - {yaml_vals[3]}\n'
+              f'    - {yaml_vals[4]}\n'
+              f'    - {yaml_vals[5]}\n'
+              f'    tilt:\n'
+              f'    - {yaml_vals[0]}\n'
+              f'    - {yaml_vals[1]}\n'
+              f'    - {yaml_vals[2]}\n'
+              f'    chi: {yaml_vals[6]}\n'
+              f'    omega_correction: {getattr(working_experiment, "omega_correction", None)}'
+        )
+        return working_experiment
+
     else:
-        print('Not iterating over this variable; iterations set to zero.')
+        # No scan, just print current values and plot current confidence map
+        yaml_vals = experiment.detector_params[0:7]
+        yaml_vals[0:3] = rotations.expMapOfQuat(
+            rotations.quatOfRotMat(experiment.rMat_d)
+        )
+        print(f'The current values from the .yaml are:\n'
+              f'  transform:\n'
+              f'    translation:\n'
+              f'    - {yaml_vals[3]}\n'
+              f'    - {yaml_vals[4]}\n'
+              f'    - {yaml_vals[5]}\n'
+              f'    tilt:\n'
+              f'    - {yaml_vals[0]}\n'
+              f'    - {yaml_vals[1]}\n'
+              f'    - {yaml_vals[2]}\n'
+              f'    chi: {yaml_vals[6]}\n'
+              f'    omega_correction: {getattr(experiment, "omega_correction", None)}'
+        )
+        experiment = load_omegas_from_npz_and_correct(
+            experiment, omega_shift_deg=getattr(experiment, "omega_correction", None)
+        )
+        precomputed_orientation_data = precompute_diffraction_data(
+            experiment, controller, experiment.exp_maps
+        )
+        raw_exp_maps, raw_confidence, raw_idx = test_orientations_at_coordinates(
+            experiment, controller, image_stack,
+            precomputed_orientation_data, test_coordinates, refine_yes_no=0
+        )
+        grain_map, confidence_map = process_raw_data(
+            raw_confidence, raw_idx, Xs.shape, mask=None, id_remap=experiment.remap
+        )
+        plt.figure()
+        plt.imshow(confidence_map[0, :, :], clim=[0, 1])
+        plt.title(f'Confidence Map')
+        plt.colorbar()
+        plt.show(block=False)
+        return experiment
 
 # %% ============================================================================
 # METADATA READERS AND IMAGE PROCESSING
@@ -2589,16 +2860,16 @@ def skim_metadata(raw_folder, output_dict=False):
     assert len(f_jsons) > 0, "No .jsons found in {}".format(raw_folder)
     f_par = [x[:-4] + "par" for x in f_jsons]
     assert np.all([os.path.isfile(x) for x in f_par]), "missing .par files"
-    
+
     # Read in headers from jsons
     headers = [json.load(open(j, "r")).values() for j in f_jsons]
-    
+
     # Read in headers from each json and data from each par as Dataframes
     df_list = [
         pd.read_csv(p, names=h, delim_whitespace=True, comment="#")
         for h, p in zip(headers, f_par)
     ]
-    
+
     # Concactionate into a single dataframe and delete duplicate columns
     meta_df_dups = pd.concat(df_list, axis=1)
     meta_df = meta_df_dups.loc[:, ~meta_df_dups.columns.duplicated()].copy()
@@ -2632,12 +2903,12 @@ def skim_image_locations(meta_df, raw_folder):
             print('There are ' + str(sum(good_ids)) + ' images in scan ' + str(scan[i]) +\
                   ' when ' + str(num_frames_anticipated[i]) + ' were expected')
         num_imgs_per_scan[i] = sum(good_ids)
-    
+
     if flag == 1:
         print("HEY, LISTEN!  There was an unexpected number of images within at least one scan folder.\n\
 This code will proceed with the shortened number of images and will assume that\n\
 the first image is still the 'goodstart' as defined in the par file.")
-            
+
     # flatten the list of lists
     files = [item for sub in files for item in sub]
     # sanity check
@@ -2666,7 +2937,7 @@ def generate_omega_edges(meta_df,num_imgs_per_scan):
         print('Editing omega stop postion from the metadata to deal with fewer images')
         print('CHECK YOUR OMEGA EDGES AND STEP SIZE WITH np.gradient(omega_edges_deg)')
         stop = stop - (stop/num_frames_anticipated)*(num_frames_anticipated-steps)
-    scan = meta_df["SCAN_N"].to_numpy() 
+    scan = meta_df["SCAN_N"].to_numpy()
     # Find the omega start positions for each frame
     lines = [np.linspace(a, b - (b - a) / c, c)
              for a, b, c in zip(start, stop, steps)]
@@ -2694,7 +2965,7 @@ def _remove_dynamic_median(raw_image_stack,median_size_through_omega=25,start=0,
     for slice in np.arange(n_slices):
         # Grab a slice at a specific through the raw image stack (does not really matter which axis)
         raw_slice = cleaned_slices[:, :, slice]
-        # Calculate a moving median along omega at each 
+        # Calculate a moving median along omega at each
         raw_slice_dark = scipy.ndimage.median_filter(raw_slice, size=[median_size_through_omega, 1])
         # Update the slice and handle negatives
         new_slice = raw_slice - raw_slice_dark
@@ -2705,66 +2976,126 @@ def _remove_dynamic_median(raw_image_stack,median_size_through_omega=25,start=0,
     return cleaned_slices, start, stop
 
 # Image binarization
-def _filter_and_binarize_image(cleaned_image_stack,filter_parameters,start,stop):
-    # Grab a chunk of the image stack
-    working_image_stack = np.copy(cleaned_image_stack[start:stop,:,:])
-    # Create a binarized image stack
-    binarized_image_stack = np.zeros(np.shape(working_image_stack),bool)
-    # How many images?
-    n_images = np.shape(working_image_stack)[0]
-    # Filter Parameters information
-    # filter_parameters[0] - if 1, remove small objects, if 0 do nothing
-    # filter_parameters[1] - what size of small objects to remove
-    # filter_parameters[2] - which cleanup to use
-    # filter_parameters[3:] - cleanup parameters
-    # What filter are we using?
+def _filter_and_binarize_image(
+    cleaned_image_stack,
+    filter_parameters,
+    start,
+    stop
+):
+    """
+    Apply filtering and binarization to a stack of images.
+
+    This function processes a chunk of images by applying a selected filter,
+    then binarizes the result. Optionally, it can remove small objects after binarization.
+    It is designed to be used in a multiprocessing context, processing a subset of images
+    (from index `start` to `stop`) in the stack.
+
+    Parameters
+    ----------
+    cleaned_image_stack : ndarray
+        3D array of images to process, shape (N_images, height, width).
+    filter_parameters : list or tuple
+        Parameters controlling the filtering and binarization:
+        - filter_parameters[0]: int
+            If 1, remove small objects after binarization; if 0, do not.
+        - filter_parameters[1]: int
+            Minimum size (in pixels) for objects to keep (if [0] == 1).
+        - filter_parameters[2]: int
+            Filter type selector:
+                0 = Gaussian filter, then threshold.
+                1 = Erosion/dilation, then threshold.
+                2 = Non-local means denoising, then threshold.
+                3 = Gaussian filter, then median filter, then threshold.
+        - filter_parameters[3:]: list
+            Additional filter-specific parameters:
+                For filter 0: [sigma, threshold]
+                For filter 1: [errosions, dilations, threshold]
+                For filter 2: [patch_size, patch_distance, threshold]
+                For filter 3: [sigma, median_filter_size]
+    start : int
+        Start index for the chunk of images to process.
+    stop : int
+        Stop index (exclusive) for the chunk of images to process.
+
+    Returns
+    -------
+    binarized_image_stack : ndarray
+        Boolean array of shape (stop-start, height, width), containing the
+        binarized (filtered and thresholded) images for this chunk.
+    start : int
+        The start index (for downstream assembly).
+    stop : int
+        The stop index (for downstream assembly).
+
+    Usage Example
+    -------------
+    # Example filter_parameters for Gaussian cleanup and small object removal:
+    filter_parameters = [1, 50, 0, 1.0, 100]  # Remove small objects, min size 50, Gaussian, sigma=1.0, threshold=100
+
+    # Process images 0 to 100
+    bin_stack, start, stop = _filter_and_binarize_image(
+        cleaned_image_stack, filter_parameters, 0, 100
+    )
+
+    # Typical usage is inside a multiprocessing worker/distributor.
+    """
+
+    # Extract the chunk of images to process
+    working_image_stack = np.copy(cleaned_image_stack[start:stop, :, :])
+    n_images = working_image_stack.shape[0]
+    binarized_image_stack = np.zeros(working_image_stack.shape, dtype=bool)
+
     which_filter = filter_parameters[2]
+
     if which_filter == 0:
-        # Gaussian cleanup
-        # Grab parameters
-        [sigma,threshold] = filter_parameters[3:]
-        for i in np.arange(n_images):
-            # Grab the image
+        # Gaussian filter, then threshold
+        sigma, threshold = filter_parameters[3:]
+        for i in range(n_images):
             img = working_image_stack[i, :, :]
-            # Filter
-            img = skimage.filters.gaussian(img, sigma=sigma,preserve_range=True)
-            # Threshold and put into binary stack
-            binarized_image_stack[i,:,:] = img > threshold
+            img = skimage.filters.gaussian(img, sigma=sigma, preserve_range=True)
+            binarized_image_stack[i, :, :] = img > threshold
+
     elif which_filter == 1:
-        # Errosion/dilation cleanup
-        # Grab parameters
-        [errosions,dilations,threshold] = filter_parameters[3:]
-        for i in np.arange(n_images):
-            # Grab the image
+        # Erosion/dilation, then threshold
+        errosions, dilations, threshold = filter_parameters[3:]
+        for i in range(n_images):
             img = working_image_stack[i, :, :]
-            # Binarize
             img_binary = img > threshold
-            # Errode then dilate
             img_binary = scipy.ndimage.binary_erosion(img_binary, iterations=errosions)
             img_binary = scipy.ndimage.binary_dilation(img_binary, iterations=dilations)
-            # Toss into binary stack
-            binarized_image_stack[i,:,:] = img_binary
+            binarized_image_stack[i, :, :] = img_binary
+
     elif which_filter == 2:
-        # Non-local means cleanup
-        # Grab parameters
-        [patch_size,patch_distance,threshold] = filter_parameters[3:]
-        for i in np.arange(n_images):
-            # Grab the image
+        # Non-local means denoising, then threshold
+        patch_size, patch_distance, threshold = filter_parameters[3:]
+        for i in range(n_images):
             img = working_image_stack[i, :, :]
-            # Estimage the per-slice sigma
             s_est = skimage.restoration.estimate_sigma(img)
-            # Run non-local_means
-            img = skimage.restoration.denoise_nl_means(img, sigma=s_est, h=0.8 * s_est, patch_size=patch_size, patch_distance=patch_distance, preserve_range = True)
-            # Binarize and throw into new stack
-            binarized_image_stack[i,:,:] = img > threshold
+            img = skimage.restoration.denoise_nl_means(
+                img, sigma=s_est, h=0.8 * s_est,
+                patch_size=patch_size, patch_distance=patch_distance,
+                preserve_range=True
+            )
+            binarized_image_stack[i, :, :] = img > threshold
 
-    # Are we removing small features?
+    elif which_filter == 3:
+        # Gaussian filter, then median filter, then threshold
+        sigma, median_filter_size = filter_parameters[3:]
+        for i in range(n_images):
+            img = working_image_stack[i, :, :]
+            g = gaussian_filter(img, sigma=sigma)
+            med = median_filter(g, size=median_filter_size)
+            binarized_image_stack[i, :, :] = med > 0
+
+    # Optionally remove small objects in each binarized image
     remove_small_features = filter_parameters[0]
+    min_size = filter_parameters[1]
     if remove_small_features == 1:
-        for i in np.arange(n_images):
-            binarized_image_stack[i, :, :] = skimage.morphology.remove_small_objects(binarized_image_stack[i, :, :],filter_parameters[1],connectivity=1)
+        for i in range(n_images):
+            binarized_image_stack[i, :, :] = skimage.morphology.remove_small_objects(
+                binarized_image_stack[i, :, :], min_size, connectivity=1
+            )
 
-    # Return the things
     return binarized_image_stack, start, stop
 
 # Dilation through omega
@@ -2801,12 +3132,5 @@ def make_beamstop_mask(raw_image_stack,num_img_for_median,binarization_threshold
     working_img = skimage.morphology.remove_small_objects(working_img,feature_size_to_remove,connectivity=1)
     # Invert the image
     working_img = working_img == 0
-    # Return 
+    # Return
     return working_img
-
-
-
-
-
-
-

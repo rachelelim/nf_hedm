@@ -66,6 +66,7 @@ NF_images:
   sample_raw_data_folder: '/nfs/chess/raw/2017-2/f2/rollett-628-1/ti7-1/'
 
   image_loading:
+    style: direct # par, direct, or imageseries
     # A metadata file (.par and .json) will be looked for by default
       # If none is found images will be loaded directly
     # Metadata Paramters
@@ -77,7 +78,7 @@ NF_images:
     data_folders: [13]
     stem: nf_
     stem_digits: 5
-    goodstart: 3885
+    goodstarts: [3885]
     nframes_per_folder: 1440
 
   # Image cleaning routine
@@ -104,6 +105,9 @@ NF_images:
     patch_size: 3
     patch_distance: 5
     NLM_binarization_threshold: 10 # Images are floats when this is applied
+
+    # Median Cleaning Parameters
+    median_filter_size: 6
 
     # Small object removal
     small_object_size: 500 # Number of pixels or None to remove nothing

@@ -54,11 +54,12 @@ class NF_ReconstructionConfig(Config):
 
     @property
     def misorientation(self):
-        key = self._cfg.get(
-            'NF_reconstruction:experiment:misorientation:use_misorientation', True)
+        key = self._cfg.get('NF_reconstruction:misorientation:use_misorientation', True)
         if key is True:
-            parms = dict(misorientation_bnd=self.get('NF_reconstruction:experiment:misorientation:bound', 0.5),
-                         misorientation_spacing=self.get('NF_reconstruction:experiment:misorientation:spacing', 0.25))
+            parms = dict(
+                misorientation_bnd=self._cfg.get('NF_reconstruction:misorientation:misorientation_bnd', 0.5),
+                misorientation_spacing=self._cfg.get('NF_reconstruction:misorientation:misorientation_spacing', 0.25)
+            )
             return parms
         else:
             print('Not using mis')

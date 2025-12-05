@@ -28,23 +28,23 @@ class LoadingConfig(Config):
     @property
     def load_style(self):
         return self._cfg.get('NF_images:image_loading:style')
-    
+
     @property
     def sample_raw_data_folder(self):
         return self._cfg.get('NF_images:sample_raw_data_folder')
-    
+
     @property
     def json_and_par_starter(self):
         return self._cfg.get('NF_images:image_loading:json_and_par_starter')
-    
+
     @property
     def vertical_motor_name(self):
         return self._cfg.get('NF_images:image_loading:vertical_motor_name')
-    
+
     @property
     def target_vertical_position(self):
         return self._cfg.get('NF_images:image_loading:target_vertical_position')
-    
+
     @property
     def stem(self):
         return self._cfg.get('NF_images:image_loading:stem')
@@ -54,20 +54,16 @@ class LoadingConfig(Config):
         return self._cfg.get('NF_images:image_loading:stem_digits')
 
     @property
-    def img_start(self):
-        return self._cfg.get('NF_images:image_loading:img_start')
-
-    @property
     def nframes(self):
         return self._cfg.get('NF_images:image_loading:nframes_per_folder', 1440)
-    
+
     @property
     def data_folders(self):
         return self._cfg.get('NF_images:image_loading:data_folders')
-    
+
     @property
-    def goodstarts(self):
-        return self._cfg.get('NF_images:image_loading:goodstarts')
+    def goodstart(self):
+        return self._cfg.get('NF_images:image_loading:goodstart')
 
 class ProcessingConfig(Config):
 
