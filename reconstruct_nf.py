@@ -1,165 +1,277 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-original author: dcp5303
-contributing author: seg246
-"""
-"""
-NOTES:
-    - The reference frame used in this script is the HEXRD frame
-        - X points right if facing towards the x-ray detector (downstream)
-        - Y points up (against gravity)
-        - Z points upstream (away from the detector)
-        - X,Y,Z center is where the beam intercepts the rotation axis
+Near-field grain mapping reconstruction script.
 
-    - The tomography mask input is a binarized array of the entire tomography volume
-    - Y (vertical) calibration is only needed if your detector center was not
-        placed at the center of the beam (usually the case)
-    - Z distance is around 6-7 mm normally (11 mm if the furnace is in)
-    - X distance is the same as from your tomography reconstruction
-        If you have a RAMS sample then it is usually less than 0.1 mm
-    - You voxel size should not be less than your pixel size - you cannot claim such resolution
-    - The IPF color plotting has not be unit tested and as such it should not be used for 
-        anything but general debugging and initial visualization (currently)
-    - This reconstruction alogorithm only produces a grain averaged microstructure
-        If your sample has high dislocation content it will not do well
-    - For choosing the HKLs, it is advised to draw out the rough geometry and run 
-        the numbers to see which HKLs will hit the detector at the front and 
-        back of the sample - refine as you calibration z
-    - If FF did not find a grain, it will show up as a low confidence region in
-        the NF reconstruction
-    - Your images have already been processed and binarized with a prior script
-
-
-    - Note that HEXRD works with grain orientations which are defined from CRYSTAL TO SAMPLE 
-        specifically as v_samp = R_cry_to_samp * v_cry
-    - Here is a description pulled from the xf.py script within HEXRD.  (COB is change of basis). 
-    
-        gVec_c : numpy.ndarray
-            (3, n) array of n reciprocal lattice vectors in the CRYSTAL FRAME.
-        rMat_s : numpy.ndarray
-            (3, 3) array, the COB taking SAMPLE FRAME components to LAB FRAME. 
-        rMat_c : numpy.ndarray
-            (3, 3) array, the COB taking CRYSTAL FRAME components to SAMPLE FRAME.
-    
-        # form unit reciprocal lattice vectors in lab frame (w/o translation)
-        gVec_l = np.dot(rMat_s, np.dot(rMat_c, unitVector(gVec_c)))
-    
-    The line above is the important one.  It is the coordinate transformation of the g vector 
-        from the crystal frame to the lab frame.  rMat_c is the orientation matrix that we have 
-        outputted into the grain.out files from HEXRD (though it is expressed in axis angle form).  
-        Note that rMat_c is defined from the crystal to the sample frame, but more specifically it transforms a 
-        vector in the crystal frame into the sample frame as: gVec_s = np.dot(rMat_c,gVec_c).  Note that 
-        np.dot in python is the same as rMat_c*gVec_c in matlab (a pre-multiplication).  Recall 
-        of course that gVec_c here is a column vector (tall – 3x1 in both python and matlab) as is gVec_s.
-
+Authors: dcp5303, seg246
 """
 
-# %% ===========================================================================
-# Imports - NO CHANGES NEEDED
-# ==============================================================================
-# General Imports
-
-# Hexrd imports
-import importlib
 import argparse
+import logging
+import sys
+import os
+
 import matplotlib.pyplot as plt
-import matplotlib
 import nf_config
-import nfutil as nfutil
+import nfutil_REL as nfutil
 import numpy as np
-importlib.reload(nf_config)
-
-importlib.reload(nfutil)
-
-# Matplotlib
-# This is to allow interactivity of inline plots in your gui
-# the import ipywidgets as widgets line is not needed - however, you do need to run a pip install ipywidgets
-# the import ipympl line is not needed - however, you do need to run a pip install ipympl
-# import ipywidgets as widgets
-# import ipympl
-# The next lines are formatted correctly, no matter what your IDE says
-# For inline, interactive plots (if you use these, make sure to run a plt.close() to prevent crashing)
-# %matplotlib widget
-# For inline, non-interactive plots
-# %matplotlib inline
-# For pop out, interactive plots (cannot be used with an SSH tunnel)
-# %matplotlib qt
-
-# %%
-parser = argparse.ArgumentParser(description='Preprocess NF image stack')
-
-parser.add_argument('input_file', type=str,
-                    help='Input File for NF reconstruction')
+import h5py
 
 
-args = parser.parse_args()
-configuration_filepath = args.input_file
-
-# %% ===========================================================================
-# FILES TO LOAD -CAN BE EDITED
-# ==============================================================================
-# configuration_filepath = '/nfs/chess/user/relim/ti7al-cyclic/NF/initial/nf_initial_config.yml'
-#configuration_filepath = './s27-1_L0.yml'
-# configuration_filepath = '/nfs/chess/user/relim/ti7al-cyclic/NF/final/nf_final_config.yml'
-# configuration_filepath = '/nfs/chess/user/relim/voisin-3061-d/0422-s19-1/NF/intragranular/nf_initial_config.yml'
+def setup_logging(verbose=False):
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        format='[%(levelname)s] %(message)s',
+        level=level
+    )
 
 
-# %% ==========================================================================
-# LOAD IMAGES AND EXPERIMENT - DO NOT EDIT
-# =============================================================================
-# Go ahead and load the configuration
-configuration = nf_config.open_file(configuration_filepath)[0]
-
-# %%
-# Generate the experiment
-experiment, image_stack = nfutil.generate_experiment(configuration)
-# Generate the controller
-controller = nfutil.build_controller(configuration)
-# %% ===========================================================================
-# LOAD MASK / GENERATE TEST COORDINATES  - NO CHANGES NEEDED
-# ==============================================================================
-Xs, Ys, Zs, mask, test_coordinates = nfutil.generate_test_coordinates(
-    experiment.cross_sectional_dimensions, experiment.vertical_bounds,
-    experiment.voxel_spacing, mask_data_file=experiment.mask_filepath,
-    vertical_motor_position=experiment.vertical_motor_position)
-
-# %% ==========================================================================
-# PRECOMPUTE ORIENTATION DATA
-# =============================================================================
-precomputed_orientation_data = nfutil.precompute_diffraction_data(
-    experiment, controller, experiment.exp_maps)
-
-# %% ==========================================================================
-# TEST ORIENTATIONS AND PROCESS OUTPUT
-# =============================================================================
-raw_exp_maps, raw_confidence, raw_idx = nfutil.test_orientations_at_coordinates(
-    experiment, controller, image_stack, precomputed_orientation_data, test_coordinates, refine_yes_no=0)
-grain_map, confidence_map = nfutil.process_raw_data(
-    raw_confidence, raw_idx, Xs.shape, mask=mask.astype(bool), id_remap=experiment.remap)
-
-# %% ==========================================================================
-# Show Images - CAN BE EDITED
-# =============================================================================
-layer_num = 0  # Which layer in Y?
-conf_thresh = 0.2  # If set to None no threshold is used
-nfutil.plot_ori_map(grain_map, confidence_map, Xs, Zs, experiment.exp_maps,
-                    layer_num, experiment.mat[experiment.material_name], experiment.remap, conf_thresh)
-# Quick note - nfutil assumes that the IPF reference vector is [0 1 0]
-
-# %% ==========================================================================
-# SAVE PROCESSED GRAIN MAP DATA - CAN BE EDITED
-# # =============================================================================
-nfutil.save_nf_data(experiment.output_directory, experiment.analysis_name, grain_map, confidence_map,
-                    Xs, Ys, Zs, experiment.exp_maps, tomo_mask=mask, id_remap=experiment.remap,
-                    save_type=['npz'])  # Can be npz or hdf5
-
-# %% ==========================================================================
-# SAVE PROCESSED GRAIN MAP DATA WITH IPF COLORS - CAN BE EDITED
-# =============================================================================
-nfutil.save_nf_data_for_paraview(experiment.output_directory, experiment.analysis_name, grain_map, confidence_map, Xs,
-                                 Ys, Zs, experiment.exp_maps, experiment.mat[experiment.material_name], tomo_mask=mask, id_remap=experiment.remap)
-# Quick note - nfutil assumes that the IPF reference vector is [0 1 0]
+def validate_file(filepath, description):
+    if not os.path.isfile(filepath):
+        logging.error(f"{description} file not found: {filepath}")
+        sys.exit(1)
 
 
-# %%
+def load_configuration(config_path):
+    validate_file(config_path, "Configuration")
+    try:
+        configuration = nf_config.open_file(config_path)[0]
+    except Exception as e:
+        logging.error(f"Error loading configuration: {e}")
+        sys.exit(1)
+    return configuration
+
+def predict_output_shapes_and_dtypes(configuration):
+    # Use config to predict output array shapes/dtypes
+    # This uses nfutil.generate_test_coordinates logic, but does NOT run reconstruction
+
+    cross_sectional_dim = configuration.reconstruction.cross_sectional_dimensions
+    v_bnds = configuration.reconstruction.desired_vertical_span
+    voxel_spacing = configuration.reconstruction.voxel_spacing
+    mask_data_file = configuration.reconstruction.tomography.get('mask_filepath', None)
+    vertical_motor_position = configuration.reconstruction.tomography.get('vertical_motor_position', 0.0)
+
+    # Generate grid shape (without running full experiment)
+    Xs, Ys, Zs, mask, test_coordinates = nfutil.generate_test_coordinates(
+        cross_sectional_dim,
+        v_bnds,
+        voxel_spacing,
+        mask_data_file=mask_data_file,
+        vertical_motor_position=vertical_motor_position
+    )
+    grid_shape = Xs.shape
+
+    # Predict dtypes
+    dtypes = {
+        'grain_map': np.int32,
+        'confidence': np.float32,
+        'Xs': np.float32,
+        'Ys': np.float32,
+        'Zs': np.float32,
+        'tomo_mask': bool
+    }
+    shapes = {
+        'grain_map': grid_shape,
+        'confidence': grid_shape,
+        'Xs': grid_shape,
+        'Ys': grid_shape,
+        'Zs': grid_shape,
+        'tomo_mask': grid_shape
+    }
+    return shapes, dtypes
+
+
+def check_hdf5_dataset_conflicts(h5_filepath, shapes, dtypes):
+    """
+    Checks for conflicting datasets in an HDF5 file.
+
+    Parameters
+    ----------
+    h5_filepath : str
+        Path to the HDF5 file.
+    shapes : dict
+        Dict of dataset shapes.
+    dtypes : dict
+        Dict of dataset dtypes.
+
+    Returns
+    -------
+    conflicts : list
+        List of dataset names that conflict (exist with different shape or dtype).
+    """
+    conflicts = []
+    if not os.path.isfile(h5_filepath):
+        return conflicts  # No file, so no conflicts
+
+    with h5py.File(h5_filepath, 'r') as hf:
+        for dset_name in shapes:
+            if dset_name in hf:
+                existing = hf[dset_name]
+                # Compare shape and dtype
+                if existing.shape != shapes[dset_name] or existing.dtype != np.dtype(dtypes[dset_name]):
+                    conflicts.append(dset_name)
+    return conflicts 
+
+def handle_hdf5_conflicts(h5_filepath, conflicts, overwrite=False):
+    """
+    Handles conflicting datasets in an HDF5 file.
+
+    Parameters
+    ----------
+    h5_filepath : str
+        Path to the HDF5 file.
+    conflicts : list
+        List of conflicting dataset names.
+    overwrite : bool
+        If True, delete conflicting datasets. If False, abort.
+    """
+    if not conflicts:
+        return
+    if overwrite:
+        with h5py.File(h5_filepath, 'a') as hf:
+            for dset_name in conflicts:
+                logging.warning(f"Overwriting dataset '{dset_name}' in {h5_filepath}")
+                del hf[dset_name]
+    else:
+        logging.error(
+            f"Conflicting datasets found in {h5_filepath}: {conflicts}. "
+            "Use --overwrite-hdf5 to remove them."
+        )
+        raise RuntimeError("HDF5 dataset conflict detected.")
+
+def preflight_hdf5_check(experiment, grain_map, confidence_map, Xs, Ys, Zs, mask, overwrite_hdf5=False):
+    h5_path = os.path.join(experiment.output_directory, experiment.analysis_name + '_grain_map_data.h5')
+    datasets = {
+        'grain_map': grain_map,
+        'confidence': confidence_map,
+        'Xs': Xs,
+        'Ys': Ys,
+        'Zs': Zs,
+        'tomo_mask': mask
+    }
+    conflicts = check_hdf5_dataset_conflicts(h5_path, datasets)
+    handle_hdf5_conflicts(h5_path, conflicts, overwrite=overwrite_hdf5)
+
+
+def run_reconstruction(configuration, plot=True, layer_index=0, conf_thresh=0.2):
+    # Generate experiment and image stack
+    experiment, image_stack = nfutil.generate_experiment(configuration)
+    controller = nfutil.build_controller(configuration)
+
+    # Generate test coordinates and mask
+    Xs, Ys, Zs, mask, test_coordinates = nfutil.generate_test_coordinates(
+        experiment.cross_sectional_dimensions,
+        experiment.vertical_bounds,
+        experiment.voxel_spacing,
+        mask_data_file=experiment.mask_filepath,
+        vertical_motor_position=experiment.vertical_motor_position
+    )
+
+    # Precompute orientation data
+    orientation_data = nfutil.precompute_diffraction_data(
+        experiment, controller, experiment.exp_maps
+    )
+
+    # Test orientations at coordinates
+    raw_exp_maps, raw_confidence, raw_idx = nfutil.test_orientations_at_coordinates(
+        experiment, controller, image_stack, orientation_data, test_coordinates, refine_yes_no=0
+    )
+
+    # Process raw output
+    grain_map, confidence_map = nfutil.process_raw_data(
+        raw_confidence, raw_idx, Xs.shape, mask=mask.astype(bool), id_remap=experiment.remap
+    )
+
+    # Plot results if requested
+    if plot:
+        if layer_index < 0 or layer_index >= Xs.shape[0]:
+            logging.warning(
+                f"Layer index {layer_index} out of bounds, using 0.")
+            layer_index = 0
+        nfutil.plot_ori_map(
+            grain_map, confidence_map, Xs, Zs,
+            experiment.exp_maps, layer_index,
+            experiment.mat[experiment.material_name],
+            experiment.remap, conf_thresh
+        )
+
+    # Return all data needed for saving
+    return {
+        "experiment": experiment,
+        "grain_map": grain_map,
+        "confidence_map": confidence_map,
+        "Xs": Xs,
+        "Ys": Ys,
+        "Zs": Zs,
+        "mask": mask,
+        "exp_maps": experiment.exp_maps
+    }
+
+
+def save_reconstruction_results(data):
+    experiment = data["experiment"]
+    grain_map = data["grain_map"]
+    confidence_map = data["confidence_map"]
+    Xs = data["Xs"]
+    Ys = data["Ys"]
+    Zs = data["Zs"]
+    mask = data["mask"]
+    exp_maps = data["exp_maps"]
+
+    # Save processed data (.npz)
+    nfutil.save_nf_data(
+        experiment.output_directory, experiment.analysis_name,
+        grain_map, confidence_map, Xs, Ys, Zs, exp_maps,
+        tomo_mask=mask, id_remap=experiment.remap,
+        save_type=['npz']
+    )
+
+    # Save processed data for Paraview (.h5, .xdmf, IPF colors)
+    nfutil.save_nf_data_for_paraview(
+        experiment.output_directory, experiment.analysis_name,
+        grain_map, confidence_map, Xs, Ys, Zs, exp_maps,
+        experiment.mat[experiment.material_name], tomo_mask=mask,
+        id_remap=experiment.remap
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Near-field reconstruction grain mapping.'
+    )
+    parser.add_argument('input_file', type=str, help='Input configuration file (YAML)')
+    parser.add_argument('--no-plot', action='store_true', help='Skip plotting results')
+    parser.add_argument('--layer', type=int, default=0, help='Layer index for visualization')
+    parser.add_argument('--conf-thresh', type=float, default=0.2, help='Confidence threshold for plotting')
+    parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
+    parser.add_argument('--overwrite-hdf5', action='store_true', help='Overwrite conflicting datasets in HDF5 output')
+    args = parser.parse_args()
+
+    
+    setup_logging(args.verbose)
+    configuration = load_configuration(args.input_file)
+
+    # --- HDF5 preflight check BEFORE running reconstruction ---
+    shapes, dtypes = predict_output_shapes_and_dtypes(configuration)
+    h5_path = os.path.join(configuration.output_directory,
+                          configuration.analysis_name + '_grain_map_data.h5')
+    conflicts = check_hdf5_dataset_conflicts(h5_path, shapes, dtypes)
+    try:
+        handle_hdf5_conflicts(h5_path, conflicts, overwrite=args.overwrite_hdf5)
+    except RuntimeError as e:
+        logging.error(f"Aborting due to HDF5 dataset conflict: {e}")
+        sys.exit(1)
+
+
+    reconstruction_data = run_reconstruction(
+        configuration,
+        plot=not args.no_plot,
+        layer_index=args.layer,
+        conf_thresh=args.conf_thresh
+    )
+
+    save_reconstruction_results(reconstruction_data)
+
+if __name__ == '__main__':
+    main()
+

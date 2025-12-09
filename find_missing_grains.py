@@ -1,351 +1,277 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-contributing authors: dcp5303, ken38, seg246
-"""
-"""
-NOTES:
-    - The reference frame used in this script is the HEXRD frame
-        - X points right if facing towards the x-ray detector (downstream)
-        - Y points up (against gravity)
-        - Z points upstream (away from the detector)
-        - X,Y,Z center is where the beam intercepts the rotation axis
+Find missing grains in a reconstructed volume using HEXRD near-field grain mapping.
 
-    - The standard reconstruction must be done ahead of time WITH A MASK
-    - Don't use a really small voxel size - 0.005 is fine (unless you have very 
-        small grains and very good data)
-    - The goal of this script is to find grains within the volume that FF is 
-        struggling to find - FIND AS MANY GRAINS AS YOU CAN WITH FF
-        The more low confidence you have in your grain map the longer this will take
-    - Even with relativly few low confidence regions, this script will still take 
-        several hours to complete.  
-    - This script will output a grains.out file with the original grains (those found
-        in the input reconstruction) and the new, found grains appended to the list.
-    - If you decide to save and re-run it will use all the new grains (and the old)
-    - Grains found in NF should be pushed back to FF to attempt a fit - FF will provide
-        a more refined orientation.  
-
-    - Note that HEXRD works with grain orientations which are defined from CRYSTAL TO SAMPLE 
-        specifically as v_samp = R_cry_to_samp * v_cry
-    - Here is a description pulled from the xf.py script within HEXRD.  (COB is change of basis). 
-    
-        gVec_c : numpy.ndarray
-            (3, n) array of n reciprocal lattice vectors in the CRYSTAL FRAME.
-        rMat_s : numpy.ndarray
-            (3, 3) array, the COB taking SAMPLE FRAME components to LAB FRAME. 
-        rMat_c : numpy.ndarray
-            (3, 3) array, the COB taking CRYSTAL FRAME components to SAMPLE FRAME.
-    
-        # form unit reciprocal lattice vectors in lab frame (w/o translation)
-        gVec_l = np.dot(rMat_s, np.dot(rMat_c, unitVector(gVec_c)))
-    
-    The line above is the important one.  It is the coordinate transformation of the g vector 
-        from the crystal frame to the lab frame.  rMat_c is the orientation matrix that we have 
-        outputted into the grain.out files from HEXRD (though it is expressed in axis angle form).  
-        Note that rMat_c is defined from the crystal to the sample frame, but more specifically it transforms a 
-        vector in the crystal frame into the sample frame as: gVec_s = np.dot(rMat_c,gVec_c).  Note that 
-        np.dot in python is the same as rMat_c*gVec_c in matlab (a pre-multiplication).  Recall 
-        of course that gVec_c here is a column vector (tall – 3x1 in both python and matlab) as is gVec_s.
-
+Authors: dcp5303, ken38, seg246, lim37
 """
-# %% ==========================================================================
-# IMPORTS - DO NOT CHANGE
-# ==============================================================================
-# General Imports
+
 import argparse
-import matplotlib.pyplot as plt
-import matplotlib
-from hexrd import instrument
-from hexrd import constants
-from hexrd import rotations
-import timeit
-import nf_config
-import nfutil as nfutil
-from hexrd.transforms import xfcapi
+import logging
 import os
+import time
+from typing import Any, Tuple
+
 import numpy as np
-import multiprocessing as mp
+from hexrd import instrument, constants, rotations
+from hexrd.transforms import xfcapi
 
-# Hexrd imports
+import nf_config
+import nfutil
 
-# Matplotlib
-# This is to allow interactivity of inline plots in your gui
-# the import ipywidgets as widgets line is not needed - however, you do need to run a pip install ipywidgets
-# the import ipympl line is not needed - however, you do need to run a pip install ipympl
-# import ipywidgets as widgets
-# import ipympl
-# The next lines are formatted correctly, no matter what your IDE says
-# For inline, interactive plots (if you use these, make sure to run a plt.close() to prevent crashing)
-# %matplotlib widget
-# For inline, non-interactive plots
-# %matplotlib inline
-# For pop out, interactive plots (cannot be used with an SSH tunnel)
-# %matplotlib qt
+# --- Logging Setup ---
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s %(levelname)s: %(message)s')
 
-# %% ==============================================================================
-# FILES TO LOAD -CAN BE EDITED
-# ==============================================================================
-
-parser = argparse.ArgumentParser(description='Preprocess NF image stack')
-
-parser.add_argument('input_file', type=str,
-                    help='Input File for NF reconstruction')
+# --- Utility Functions ---
 
 
-args = parser.parse_args()
-configuration_filepath = args.input_file
+def load_configuration(config_path: str) -> Any:
+    """Load and return the configuration object."""
+    configuration = nf_config.open_file(config_path)[0]
+    return configuration
 
-# %% ==========================================================================
-# LOAD IMAGES AND EXPERIMENT - DO NOT EDIT
-# =============================================================================
-# Go ahead and load the configuration
-configuration = nf_config.open_file(configuration_filepath)[0]
-# Generate the experiment
-experiment, image_stack = nfutil.generate_experiment(configuration)
-# Generate the controller
-controller = nfutil.build_controller(configuration)
-# Load the starting reconstruction
-starting_reconstruction = np.load(experiment.reconstructed_data_path)
 
-# %% ==========================================================================
-# GENERATE ORIENTATIONS TO TEST - DO NOT CHANGE
-# ==============================================================================
-# Create a regular orientation grid
-quats = np.transpose(nfutil.uniform_fundamental_zone_sampling(
-    experiment.point_group_number, average_angular_spacing_in_deg=experiment.ori_grid_spacing))
-n_grains = quats.shape[1]
+def setup_experiment(configuration: Any) -> Tuple[Any, np.ndarray, Any]:
+    """Generate experiment, image stack, and controller from configuration."""
+    experiment, image_stack = nfutil.generate_experiment(configuration)
+    controller = nfutil.build_controller(configuration)
+    return experiment, image_stack, controller
 
-# Convert to rotation matrices and exponential maps
-exp_maps_to_precompute = np.zeros([quats.shape[1], 3])
-for i in range(0, quats.shape[1]):
-    phi = 2*np.arccos(quats[0, i])
-    n = xfcapi.unitRowVector(quats[1:, i])
-    exp_maps_to_precompute[i, :] = phi*n
 
-# Precompute all relevant orientation data for each orientaiton
-# This can get very RAM heavy
-orientation_data_to_test = \
-    nfutil.precompute_diffraction_data(
-        experiment, controller, exp_maps_to_precompute)
+def load_starting_reconstruction(experiment: Any) -> dict:
+    """Load the starting reconstruction data."""
+    return np.load(experiment.reconstructed_data_path)
 
-# %% ==========================================================================
-# GENREATE TEST COORDINATES - DO NOT CHANGE
-# ==============================================================================
-# Initialize some arrays
-original_confidence = starting_reconstruction['confidence_map']
-original_exp_maps = starting_reconstruction['ori_list']
-new_exp_maps = original_exp_maps
-mask = starting_reconstruction['tomo_mask']
-voxels_to_check = np.logical_and(
-    original_confidence < experiment.confidence_threshold, original_confidence > 0.4)
-voxels_to_check[mask == 0] = 0
 
-# Grab the sparsest array of the low confidence pointsxw
-test_coordinates, ids = \
-    nfutil.generate_low_confidence_test_coordinates(starting_reconstruction, experiment.confidence_threshold,
-                                                    how_sparse=experiment.low_confidence_sparsing, errode_free_surface=experiment.errode_free_surface)
+def generate_orientation_grid(experiment: Any) -> Tuple[np.ndarray, np.ndarray]:
+    """Generate quaternion and exponential map grid for orientation sampling."""
+    quats = np.transpose(
+        nfutil.uniform_fundamental_zone_sampling(
+            experiment.point_group_number,
+            average_angular_spacing_in_deg=experiment.ori_grid_spacing
+        )
+    )
+    exp_maps = np.array([
+        2 * np.arccos(quats[0, i]) * xfcapi.unitRowVector(quats[1:, i])
+        for i in range(quats.shape[1])
+    ])
+    return quats, exp_maps
 
-# Print a warning
-print(
-    f"We will be testing {np.shape(test_coordinates)[0]} coordinates against {n_grains} orientations.")
-# All depends on how much you want to wait - I don't suggest more than a couple thousand coordinate points
-# Check your reconstruction ahead of time, if you are missing more than 5-10% of your reconstruction
-# then take a look at your FF indexing and try to improve it
 
-# %% ==========================================================================
-# FIND MISSING GRAINS SMARTLY - DO NOT CHANGE
-# ==============================================================================
-# Initialize
-new_grains = 0
-saved_new_grains = 0
-t0 = timeit.default_timer()  # Start a timer
-print(f'Searching {np.shape(test_coordinates)[0]} coordinates.')
-# Define the cutoff value for when to switch to a brute force
-coord_cutoff = np.shape(test_coordinates)[0] * experiment.coord_cutoff_scale
-# Define a counter of not finding a grain
-# If we hit this too many times in a row, we probably don't have large grains left
-no_grain_here_count = 0
-# Start while loop
-count = 0
-while count < np.shape(test_coordinates)[0] > coord_cutoff:
-    count = count+1
-    # Initialize
-    t1 = timeit.default_timer()  # Start a timer
-    print('-------------------------------------------------')
-    print('Searching for a grain.')
-    print('-------------------------------------------------')
+def precompute_orientations(experiment: Any, controller: Any, exp_maps: np.ndarray) -> Any:
+    """Precompute diffraction data for all orientations."""
+    return nfutil.precompute_diffraction_data(experiment, controller, exp_maps)
 
-    # Grab a test coordinate
-    # Using a random coordinate to avoid sampling the edges before filling in middle holes
-    idx = int(np.floor(np.random.uniform(
-        low=0, high=np.shape(test_coordinates)[0])))
-    coordinate_to_test = test_coordinates[idx, :]
-    id = ids[idx]
 
-    # Test a single coordinate and refine orientation
-    refined_exp_map, refined_conf, refined_idx = nfutil.test_orientations_at_coordinates(
-        experiment, controller, image_stack, orientation_data_to_test, coordinate_to_test, refine_yes_no=1)
-    print(
-        f'Orientaiton determined at this voxel with {np.round(refined_conf[0]*100)}% confidence.')
+def get_low_confidence_voxels(starting_reconstruction: dict, experiment: Any) -> Tuple[np.ndarray, np.ndarray]:
+    """Get coordinates and IDs of low-confidence voxels to test."""
+    return nfutil.generate_low_confidence_test_coordinates(
+        starting_reconstruction,
+        confidence_threshold=experiment.confidence_threshold,
+        how_sparse=experiment.low_confidence_sparsing,
+        errode_free_surface=experiment.errode_free_surface
+    )
 
-    print(
-        f"Took {np.round(timeit.default_timer() - t1)} seconds to search for a grain at this voxel.")
-    # Check and see if we want to look elsewhere in the reconstruction for this orientation
-    if refined_conf < experiment.confidence_threshold*0.75:
-        print('No grain found at this voxel, moving to the next.')
-        # Reset our test_coordinates
-        test_coordinates = test_coordinates[ids != id]
-        ids = ids[ids != id]
-        no_grain_here_count = no_grain_here_count + 1
-        print(
-            f'We have not found a grain for {no_grain_here_count} iterations, if we hit {experiment.iter_cutoff} we will break.')
-    else:
-        # Nice, we found one!
-        new_grains = new_grains + 1
-        print(f'Found a grain!  That makes {new_grains} so far.')
-        print(f'Searching the other low confidence voxels to see if this orientation is anywhere else.')
 
-        # Add the orientaiton to the stack of orientaitons
-        new_exp_maps = np.vstack([new_exp_maps, refined_exp_map])
+def merge_similar_orientations(quats: np.ndarray, idx: np.ndarray, misorientation_deg: float = 0.25) -> np.ndarray:
+    """
+    Merge orientations within a misorientation threshold.
+    """
+    working_quats = quats[:, idx.squeeze()]
+    merged_quats = []
+    misorientation_rad = np.radians(misorientation_deg)
 
-        # Let's see if this orientation is anywhere else
-        # Push new information to the experiment
-        single_orientation_data_to_test = nfutil.precompute_diffraction_data(
-            experiment, controller, refined_exp_map)
-        exp_maps, confidence, idx = nfutil.test_orientations_at_coordinates(
-            experiment, controller, image_stack, single_orientation_data_to_test, test_coordinates)
-        print(
-            f'This orientation was found at {np.sum(confidence > experiment.confidence_threshold)} total voxels.')
-
-        # Reset our test_coordinates
-        test_coordinates = test_coordinates[confidence <
-                                            experiment.confidence_threshold]
-        ids = ids[confidence < experiment.confidence_threshold]
-
-        print('Saving the current grains.out.')
-        # Save the grains.out in case you want it before the script is done
-        if np.sum(confidence > experiment.confidence_threshold) > 2:
-            saved_new_grains += 1
-            gw = instrument.GrainDataWriter(
-                os.path.join(experiment.output_directory,
-                             experiment.analysis_name+'_grains.out')
-            )
-            for gid, ori in enumerate(new_exp_maps):
-                grain_params = np.hstack(
-                    [ori, constants.zeros_3, constants.identity_6x1])
-                gw.dump_grain(gid, 1., 0., grain_params)
-            print(f'That makes {saved_new_grains} saved new grains so far.')
-            gw.close()
-
-        no_grain_here_count = 0
-
-    if no_grain_here_count == experiment.iter_cutoff:
-        # We likely don't have any large grains left - let's brute force it
-        break
-
-    print(
-        f'We have {np.shape(test_coordinates)[0]} low confidence coordinates left to test.')
-
-    # Time check
-    print(f"Took {np.round((timeit.default_timer() - t0)/60.)} minutes so far.")
-print(f'Found {new_grains} with random serach.  Wrapping up last chunk of coordinates with a brute search and refinement.')
-# %% ==========================================================================
-# BRUTE FORCE REMAINING VOXELS - DO NOT CHANGE
-# ==============================================================================
-# At this point, it is statistically likely that we found most of the grains
-# The startup and shutdown cost of the multiprocessing is not time cheap so we will
-# go ahead and brute force the rest of the coordinates in one go to check for any
-# remaining grains
-print(
-    f'Starting serach with {n_grains} orientations on {np.shape(test_coordinates)[0]} spatial coordinates.')
-refined_exp_maps, refined_confidence, refined_idx = nfutil.test_orientations_at_coordinates(
-    experiment, controller, image_stack, orientation_data_to_test, test_coordinates, refine_yes_no=experiment.refine_yes_no)
-print(
-    f'Search done, entering refinement on orientations with greater than {experiment.confidence_threshold} confidence.')
-print(f"Took {np.round((timeit.default_timer() - t0)/60.)} minutes so far.")
-
-# %% ==========================================================================
-# CULL DUPLICATE ORIENTATIONS - DO NOT CHANGE
-# ==============================================================================
-print('Checking for similar orientations.')
-# Initialize
-idx = refined_idx[refined_confidence > experiment.confidence_threshold]
-working_quats = quats[:, idx.squeeze()]
-final_quats = np.zeros(np.shape(working_quats))
-count = 0
-# Run through to test misorientation
-while working_quats is not None:
-    if np.shape(working_quats)[1] == 0:
-        working_quats = None
-    else:
-        # Check misorientation
-        grain_quats = np.atleast_2d(working_quats[:, 0]).T
+    while working_quats.shape[1] > 0:
+        ref_quat = np.atleast_2d(working_quats[:, 0]).T
         test_quats = np.atleast_2d(working_quats)
-        if np.shape(test_quats)[0] == 1:
-            [misorientations, a] = rotations.misorientation(
-                grain_quats, test_quats.T)
-        else:
-            [misorientations, a] = rotations.misorientation(
-                grain_quats, test_quats)
-        # Which are the same
-        idx_to_merge = misorientations < np.radians(0.25)
-        # Remove them and add a single orientation to the list
-        final_quats[:, count] = working_quats[:, 0]
-        working_quats = np.delete(working_quats, idx_to_merge, 1)
-        count = count + 1
+        misorientations, _ = rotations.misorientation(ref_quat, test_quats)
+        idx_to_merge = misorientations < misorientation_rad
+        merged_quats.append(working_quats[:, 0])
+        working_quats = np.delete(working_quats, idx_to_merge, axis=1)
 
-# Trim the list
-final_quats = final_quats[:, :count-1]
-# Convert to exp maps
-final_exp_maps = rotations.expMapOfQuat(final_quats)
-print(f'Found {count} additional grains during brute force search.')
+    final_quats = np.stack(merged_quats, axis=1)
+    final_exp_maps = rotations.expMapOfQuat(final_quats)
+    logging.info(
+        f'Found {final_quats.shape[1]} additional grains during brute force search.')
+    return final_exp_maps
 
-# %% ==========================================================================
-# SAVE A FINAL GRAINS.OUT - DO NOT CHANGE
-# ==============================================================================
-print('Saving a final grains.out.')
-final_exp_maps = np.vstack([new_exp_maps, np.transpose(final_exp_maps)])
-# Get original exp_maps
-gw = instrument.GrainDataWriter(
-    os.path.join(experiment.output_directory,
-                 experiment.analysis_name+'_grains.out')
-)
-for gid, ori in enumerate(final_exp_maps):
-    grain_params = np.hstack([ori, constants.zeros_3, constants.identity_6x1])
-    gw.dump_grain(gid, 1., 0., grain_params)
-gw.close()
-print('Done.')
 
-# %% ==========================================================================
-# RE-RUN RECONSTRUCTION AND SAVE OUTPUTS - DO NOT CHANGE
-# ==============================================================================
-if experiment.re_run_and_save == 1:
-    print('Re-running reconstruction.')
-    # Generate the experiment
+def save_grains_out(experiment: Any, exp_maps: np.ndarray) -> None:
+    """Save grains.out file with all found grains."""
+    output_path = os.path.join(
+        experiment.output_directory, experiment.analysis_name + '_grains.out')
+    gw = instrument.GrainDataWriter(output_path)
+    for gid, ori in enumerate(exp_maps):
+        grain_params = np.hstack(
+            [ori, constants.zeros_3, constants.identity_6x1])
+        gw.dump_grain(gid, 1., 0., grain_params)
+    gw.close()
+    logging.info(f'Saved grains.out to {output_path}')
+
+
+def rerun_and_save_reconstruction(experiment: Any, controller: Any, image_stack: np.ndarray, mask: np.ndarray) -> None:
+    """Re-run reconstruction and save outputs if requested."""
     grain_out_file = os.path.join(
-        experiment.output_directory, experiment.analysis_name+'.out')
-    # Rename configuation grains.out filename so the correct grains are loaded
-    configuration.input_files.grains_out_file = grain_out_file
-    # Generate space
+        experiment.output_directory, experiment.analysis_name + '.out')
+    experiment.input_files.grains_out_file = grain_out_file
     Xs, Ys, Zs, mask, test_coordinates = nfutil.generate_test_coordinates(
-        experiment.cross_sectional_dimensions, experiment.vertical_bounds, experiment.voxel_spacing, mask_data_file=experiment.mask_filepath, vertical_motor_position=experiment.vertical_motor_position)
-    # Precompute
+        experiment.cross_sectional_dimensions,
+        experiment.vertical_bounds,
+        experiment.voxel_spacing,
+        mask_data_file=experiment.mask_filepath,
+        vertical_motor_position=experiment.vertical_motor_position
+    )
     precomputed_orientation_data = nfutil.precompute_diffraction_data(
-        experiment, controller, experiment.exp_maps)
-    # Run the search
+        experiment, controller, experiment.exp_maps
+    )
     raw_exp_maps, raw_confidence, raw_idx = nfutil.test_orientations_at_coordinates(
-        experiment, controller, image_stack, precomputed_orientation_data, test_coordinates, refine_yes_no=0)
-    # Process the output
+        experiment, controller, image_stack, precomputed_orientation_data, test_coordinates, refine_yes_no=0
+    )
     grain_map, confidence_map = nfutil.process_raw_data(
-        raw_confidence, raw_idx, Xs.shape, mask=mask, id_remap=experiment.remap)
-    # Save npz
-    nfutil.save_nf_data(experiment.output_directory, experiment.analysis_name, grain_map, confidence_map,
-                        Xs, Ys, Zs, experiment.exp_maps, tomo_mask=mask, id_remap=experiment.remap,
-                        save_type=['npz'])  # Can be npz or hdf5
-    # Save paraview h5
-    nfutil.save_nf_data_for_paraview(experiment.output_directory, experiment.analysis_name, grain_map, confidence_map, Xs, Ys, Zs,
-                                     experiment.exp_maps, experiment.mat[experiment.material_name], tomo_mask=mask,
-                                     id_remap=experiment.remap)
+        raw_confidence, raw_idx, Xs.shape, mask=mask, id_remap=experiment.remap
+    )
+    nfutil.save_nf_data(
+        experiment.output_directory, experiment.analysis_name,
+        grain_map, confidence_map, Xs, Ys, Zs, experiment.exp_maps,
+        tomo_mask=mask, id_remap=experiment.remap, save_type=['npz']
+    )
+    nfutil.save_nf_data_for_paraview(
+        experiment.output_directory, experiment.analysis_name,
+        grain_map, confidence_map, Xs, Ys, Zs, experiment.exp_maps,
+        experiment.mat[experiment.material_name], tomo_mask=mask,
+        id_remap=experiment.remap
+    )
+    logging.info('Reconstruction re-run and outputs saved.')
+
+# --- Main Grain Search Workflow ---
 
 
-# %%
+def find_missing_grains(config_path: str) -> None:
+    """Main workflow for finding missing grains."""
+    start_time = time.time()
+    configuration = load_configuration(config_path)
+    experiment, image_stack, controller = setup_experiment(configuration)
+    starting_reconstruction = load_starting_reconstruction(experiment)
+
+    quats, exp_maps_grid = generate_orientation_grid(experiment)
+    orientation_data_grid = precompute_orientations(
+        experiment, controller, exp_maps_grid)
+
+    original_confidence = starting_reconstruction['confidence_map']
+    original_exp_maps = starting_reconstruction['ori_list']
+    new_exp_maps = np.copy(original_exp_maps)
+    mask = starting_reconstruction['tomo_mask']
+
+    test_coordinates, ids = get_low_confidence_voxels(
+        starting_reconstruction, experiment)
+    n_grains_found = 0
+    n_grains_saved = 0
+    no_grain_count = 0
+    new_line = '\n'
+
+    coord_cutoff = test_coordinates.shape[0] * experiment.coord_cutoff_scale
+
+    logging.info(
+        f"Testing {test_coordinates.shape[0]} coordinates against {exp_maps_grid.shape[0]} orientations.")
+
+    # Random search for missing grains
+    while test_coordinates.shape[0] > coord_cutoff:
+        idx = np.random.choice(test_coordinates.shape[0])
+        coordinate_to_test = test_coordinates[idx, :]
+        id_to_test = ids[idx]
+
+        refined_exp_map, refined_conf, refined_idx = nfutil.test_orientations_at_coordinates(
+            experiment, controller, image_stack, orientation_data_grid, coordinate_to_test, refine_yes_no=1
+        )
+        conf_value = refined_conf[0] if isinstance(
+            refined_conf, np.ndarray) else refined_conf
+        logging.info(
+            f"Orientation determined at voxel (ID {id_to_test}) with {conf_value*100:.1f}% confidence.")
+
+        if conf_value < experiment.confidence_threshold * 0.75:
+            logging.info('No grain found at this voxel, moving to the next.')
+            mask_idx = ids != id_to_test
+            test_coordinates = test_coordinates[mask_idx]
+            ids = ids[mask_idx]
+            no_grain_count += 1
+            logging.info(
+                f'No grain found for {no_grain_count} iterations; breaking at {experiment.iter_cutoff}. {new_line}')
+        else:
+            n_grains_found += 1
+            logging.info(f'Found a grain! Total found: {n_grains_found}')
+            
+            single_orientation_data = nfutil.precompute_diffraction_data(
+                experiment, controller, refined_exp_map
+            )
+            exp_maps, confidence, idxs = nfutil.test_orientations_at_coordinates(
+                experiment, controller, image_stack, single_orientation_data, test_coordinates
+            )
+            found_voxels = np.sum(confidence > experiment.confidence_threshold)
+            logging.info(f'Orientation found at {found_voxels} voxels.')
+
+            mask_idx = confidence < experiment.confidence_threshold
+            test_coordinates = test_coordinates[mask_idx]
+            ids = ids[mask_idx]
+
+            if found_voxels > 2:
+                n_grains_saved += 1
+                new_exp_maps = np.vstack([new_exp_maps, refined_exp_map])
+                save_grains_out(experiment, new_exp_maps)
+                logging.info(f'Saved {n_grains_saved} new grains.{new_line}')
+            else:
+                logging.info(f'Not enough voxels to consider a new grain. {new_line}')
+
+            no_grain_count = 0
+
+        logging.info(
+            f"{test_coordinates.shape[0]} low-confidence coordinates left to test.")
+        elapsed_min = (time.time() - start_time) / 60.
+        logging.info(f"Elapsed time: {elapsed_min:.2f} minutes.")
+
+        if no_grain_count == experiment.iter_cutoff:
+            break
+
+    # Brute force remaining voxels
+    logging.info(
+        f"Brute force: {test_coordinates.shape[0]} coordinates, {exp_maps_grid.shape[0]} orientations.")
+    refined_exp_maps, refined_confidence, refined_idx = nfutil.test_orientations_at_coordinates(
+        experiment, controller, image_stack, orientation_data_grid, test_coordinates,
+        refine_yes_no=experiment.refine_yes_no
+    )
+    logging.info(
+        f"Brute force search done. Refining orientations above {experiment.confidence_threshold} confidence.")
+
+    # Merge similar orientations
+    idx_valid = refined_idx[refined_confidence >
+                            experiment.confidence_threshold]
+    final_exp_maps = merge_similar_orientations(
+        quats, idx_valid, misorientation_deg=0.25)
+    all_exp_maps = np.vstack([new_exp_maps, np.transpose(final_exp_maps)])
+
+    save_grains_out(experiment, all_exp_maps)
+
+    # Optionally rerun and save reconstruction
+    if experiment.re_run_and_save == 1:
+        rerun_and_save_reconstruction(
+            experiment, controller, image_stack, mask)
+
+    elapsed_min = (time.time() - start_time) / 60.
+    logging.info(
+        f"Total grains found: {all_exp_maps.shape[0]}. Total time: {elapsed_min:.2f} minutes.")
+    logging.info("Done.")
+
+# --- CLI Entrypoint ---
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Find missing grains in NF reconstruction')
+    parser.add_argument('input_file', type=str,
+                        help='Input configuration file for NF reconstruction')
+    args = parser.parse_args()
+    find_missing_grains(args.input_file)
+
+
+if __name__ == '__main__':
+    main()
