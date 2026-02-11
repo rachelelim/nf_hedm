@@ -1089,7 +1089,7 @@ def test_orientations_at_coordinates(experiment,controller,image_stack,orientati
     else:
         return all_exp_maps, all_confidence, all_idx.astype(int)
 
-def load_all_images(filenames,controller):
+def load_all_images(configuration,filenames,controller):
     """
         Goal: 
             
@@ -1098,57 +1098,79 @@ def load_all_images(filenames,controller):
         Output:
 
     """
-    # Start a timer
-    t0 = timeit.default_timer()
-    # How many images to load
-    n_imgs = len(filenames)
-    # How many CPUs?
-    ncpus = controller.get_process_count()
-    # Grab in formation about the files
-    quick_image = skimage.io.imread(filenames[0])
-    image_shape = np.shape(quick_image)
-    image_dtype = quick_image.dtype
-    # Single process or multi-thread?
-    if ncpus == 1:
-        # Just go ahead and load the images
-        print(f'Loading {n_imgs} images with a single CPU.')
-        raw_image_stack, start, stop = _load_images(filenames,image_shape,image_dtype,0,n_imgs)
-    else:
-        # Generate the blank image stack
-        raw_image_stack = np.zeros([n_imgs,image_shape[0],image_shape[1]],image_dtype)
-        # Define the chunk size
-        chunk_size = controller.get_chunk_size()
-        if chunk_size == -1:
-            chunk_size = int(np.ceil(n_imgs/ncpus))
-        # Create chunking
-        num_chunks = int(np.ceil(n_imgs/chunk_size))
-        chunks = np.arange(num_chunks)
-        starts = np.zeros(num_chunks,dtype=int)
-        stops = np.zeros(num_chunks,dtype=int)
-        for i in np.arange(num_chunks):
-            starts[i] = i*chunk_size
-            stops[i] = i*chunk_size + chunk_size
-            if stops[i] >= n_imgs:
-                stops[i] = n_imgs
-        print(f'Loading {n_imgs} images with {ncpus} CPUs and {num_chunks} chunks of size {chunk_size}.')
-        # Package all inputs to the distributor function
-        state = (starts,stops,filenames,image_shape,image_dtype)
-        # Start the multiprocessing loop
-        set_multiprocessing_method(controller.multiprocessing_start_method)
-        with multiprocessing_pool(ncpus,state) as pool:
-            for vals1, start, stop in pool.imap_unordered(_load_images_distributor,chunks):
-                # Grab the data as each CPU drops it
-                raw_image_stack[start:stop,:,:] = vals1
-                # Clean up
-                del vals1, start, stop
+    if configuration.images.loading.load_style == 'h5':
+        # Large h5 file read
+        num_h5s = len(filenames)
+        nframes = configuration.images.loading.nframes
+        num_imgs = nframes*num_h5s
+        # Load up a single file to get the shape and data type
+        with h5py.File(filenames[0], 'r') as data:
+            mini_image_stack = data['entry/data/data/'][:]
+            image_shape = np.shape(mini_image_stack)[1:3] # Don't need the first
+            image_dtype = mini_image_stack.dtype
+        raw_image_stack = np.zeros([num_imgs,image_shape[0],image_shape[1]],image_dtype)
+        start = 0
+        for scan in np.arange(num_h5s):
+            # Load up the data
+            with h5py.File(filenames[scan], 'r') as data:
+                raw_image_stack[start:start+nframes] = data['entry/data/data/'][:]
+            start = start + nframes
 
-    # How long did it take?
-    t1 = timeit.default_timer()
-    elapsed = t1-t0
-    if elapsed < 60.0:
-        print(f'Loaded {n_imgs} images in {np.round(elapsed,1)} seconds ({elapsed/n_imgs} seconds per image).')
+
+        
     else:
-        print(f'Loaded {n_imgs} images in {np.round(elapsed/60,1)} minutes ({elapsed/n_imgs} seconds per image).')
+        # Singe image read with multiprocessing
+        # Start a timer
+        t0 = timeit.default_timer()
+        # How many images to load
+        n_imgs = len(filenames)
+        # How many CPUs?
+        ncpus = controller.get_process_count()
+        # Grab in formation about the files
+        quick_image = skimage.io.imread(filenames[0])
+        image_shape = np.shape(quick_image)
+        image_dtype = quick_image.dtype
+        # Single process or multi-thread?
+        if ncpus == 1:
+            # Just go ahead and load the images
+            print(f'Loading {n_imgs} images with a single CPU.')
+            raw_image_stack, start, stop = _load_images(filenames,image_shape,image_dtype,0,n_imgs)
+        else:
+            # Generate the blank image stack
+            raw_image_stack = np.zeros([n_imgs,image_shape[0],image_shape[1]],image_dtype)
+            # Define the chunk size
+            chunk_size = controller.get_chunk_size()
+            if chunk_size == -1:
+                chunk_size = int(np.ceil(n_imgs/ncpus))
+            # Create chunking
+            num_chunks = int(np.ceil(n_imgs/chunk_size))
+            chunks = np.arange(num_chunks)
+            starts = np.zeros(num_chunks,dtype=int)
+            stops = np.zeros(num_chunks,dtype=int)
+            for i in np.arange(num_chunks):
+                starts[i] = i*chunk_size
+                stops[i] = i*chunk_size + chunk_size
+                if stops[i] >= n_imgs:
+                    stops[i] = n_imgs
+            print(f'Loading {n_imgs} images with {ncpus} CPUs and {num_chunks} chunks of size {chunk_size}.')
+            # Package all inputs to the distributor function
+            state = (starts,stops,filenames,image_shape,image_dtype)
+            # Start the multiprocessing loop
+            set_multiprocessing_method(controller.multiprocessing_start_method)
+            with multiprocessing_pool(ncpus,state) as pool:
+                for vals1, start, stop in pool.imap_unordered(_load_images_distributor,chunks):
+                    # Grab the data as each CPU drops it
+                    raw_image_stack[start:stop,:,:] = vals1
+                    # Clean up
+                    del vals1, start, stop
+
+        # How long did it take?
+        t1 = timeit.default_timer()
+        elapsed = t1-t0
+        if elapsed < 60.0:
+            print(f'Loaded {n_imgs} images in {np.round(elapsed,1)} seconds ({elapsed/n_imgs} seconds per image).')
+        else:
+            print(f'Loaded {n_imgs} images in {np.round(elapsed/60,1)} minutes ({elapsed/n_imgs} seconds per image).')
 
     return raw_image_stack
 
@@ -2803,6 +2825,34 @@ def generate_filepaths_and_omegas(configuration,downselection_number=None):
         # Load configuation manually
         filenames,num_imgs = generate_image_locations(configuration)
         omega_edges_deg = np.linspace(configuration.experiment.omega_start,configuration.experiment.omega_stop,num_imgs+1)
+    
+    elif configuration.images.loading.load_style == 'h5':
+        # Pull data from config
+        raw_data_path = configuration.images.loading.sample_raw_data_folder
+        folders = configuration.images.loading.data_folders
+        omega_starts = configuration.images.loading.omega_starts
+        omega_stops = configuration.images.loading.omega_stops
+        nframes = configuration.images.loading.nframes
+        nscans = len(folders)
+
+        filenames = []
+        start = 0
+        for folder in np.arange(nscans):
+            filenames.append(glob.glob(raw_data_path + os.sep + str(folders[folder]) + "/nf/*.h5")[0])
+        
+        if omega_starts != 'None':
+            # Splice together the omegas - TODO: Make the final image in each stack not too large...   
+            start = 0
+            omega_edges_deg = np.zeros(nframes*nscans+1)
+            for folder in np.arange(nscans): 
+                omega_edges_deg[start:start+nframes+1] = np.linspace(omega_starts[folder],omega_stops[folder],nframes+1)
+                start = start+nframes
+                # This will overwrite the end of the previous set of scans to lengthen the final image of each chunk - see TODO above
+        else:
+            # Default to original
+            num_imgs = nframes*nscans
+            omega_edges_deg = np.linspace(configuration.experiment.omega_start,configuration.experiment.omega_stop,num_imgs+1)
+    
 
     if downselection_number is not None:
         downselection_number = 100 # np.sum(num_imgs)

@@ -54,6 +54,14 @@ class LoadingConfig(Config):
         return self._cfg.get('NF_images:image_loading:stem_digits')
 
     @property
+    def omega_starts(self):
+        return self._cfg.get('NF_images:image_loading:omega_starts')
+    
+    @property
+    def omega_stops(self):
+        return self._cfg.get('NF_images:image_loading:omega_stops')
+    
+    @property
     def img_start(self):
         return self._cfg.get('NF_images:image_loading:img_start')
 

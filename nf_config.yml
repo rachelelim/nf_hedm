@@ -75,7 +75,7 @@ NF_images:
   sample_raw_data_folder: '/nfs/chess/raw/'
 
   image_loading:
-    style: par # par or direct
+    style: par # par, direct, or h5
     # A metadata file (.par and .json) will be looked for by default
       # If none is found images will be loaded directly
     # Metadata Paramters
@@ -89,6 +89,12 @@ NF_images:
     stem_digits: 6
     goodstarts: [32225]
     nframes_per_folder: 1440
+
+    # Load single h5 file from folder XX/nf/default_000000.h5
+    data_folders: [12, 13, 14]
+    omega_starts: None # These will overide the above omega information in images_and_omegas
+    omega_stops: None # If these two are None it will default to above values in images_and_omegas
+    nframes_per_folder: 360
 
   # Image cleaning routine
   processing:
