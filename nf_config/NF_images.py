@@ -62,8 +62,8 @@ class LoadingConfig(Config):
         return self._cfg.get('NF_images:image_loading:data_folders')
 
     @property
-    def goodstart(self):
-        return self._cfg.get('NF_images:image_loading:goodstart')
+    def goodstarts(self):
+        return self._cfg.get('NF_images:image_loading:goodstarts')
 
 class ProcessingConfig(Config):
 
@@ -107,4 +107,12 @@ class ProcessingConfig(Config):
             binarization_threshold = self._cfg.get('NF_images:processing:NLM_binarization_threshold', 10)
             filter_parameters = [remove_small_objects,small_object_size,key,
                                 patch_size,patch_distance,binarization_threshold]
+        
+        elif key == 3:
+            # Gaussian and Median Filtering
+            sigma = self._cfg.get('NF_images:processing:sigma', 1.2)
+            median_filter_size = self._cfg.get(
+                'NF_images:processing:median_filter_size', 6)
+            filter_parameters = [
+                remove_small_objects, small_object_size, key, sigma, median_filter_size]
         return filter_parameters
