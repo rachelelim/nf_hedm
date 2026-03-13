@@ -29,12 +29,14 @@ contributing authors: dcp5303, ken38, seg246, Austin Gerlt, Simon Mason
 # IMPORTS - DO NOT CHANGE
 # =============================================================================
 # Gneral imports
-import numpy as np
 import os
-
-# HEXRD Imports
+import numpy as np
 import nfutil as nfutil
 import nf_config
+import matplotlib.pyplot as plt
+import matplotlib
+
+# HEXRD Imports
 # import importlib
 # importlib.reload(nfutil) # This reloads the file if you made changes to it
 
@@ -42,17 +44,15 @@ import nf_config
 # This is to allow interactivity of inline plots in your gui
 # the import ipywidgets as widgets line is not needed - however, you do need to run a pip install ipywidgets
 # the import ipympl line is not needed - however, you do need to run a pip install ipympl
-#import ipywidgets as widgets
-#import ipympl 24
-import matplotlib
+# import ipywidgets as widgets
+# import ipympl 24
 # The next lines are formatted correctly, no matter what your IDE says
 # For inline, interactive plots (if you use these, make sure to run a plt.close() to prevent crashing)
-#%matplotlib widget
+# %matplotlib widget
 # For inline, non-interactive plots
 %matplotlib inline
 # For pop out, interactive plots (cannot be used with an SSH tunnel)
 # %matplotlib qt
-import matplotlib.pyplot as plt
 # %% ===========================================================================
 # USER INPUT - CAN BE EDITED
 # ==============================================================================
@@ -68,15 +68,16 @@ configuration = nf_config.open_file(configuration_filepath)[0]
 # %% ===========================================================================
 # LOAD METADATA AND DOWNSELECT - CAN BE EDITED
 # ==============================================================================
-downselection_number = None # None if you want to do all images, else int
-filenames, omega_edges_deg = nfutil.generate_filepaths_and_omegas(configuration,downselection_number)
+downselection_number = None  # None if you want to do all images, else int
+filenames, omega_edges_deg = nfutil.generate_filepaths_and_omegas(
+    configuration, downselection_number)
 
 # %% ===========================================================================
 # LOAD IMAGES - DO NOT EDIT
 # ==============================================================================
 # Load all of the images
 controller = nfutil.build_controller(configuration)
-raw_image_stack = nfutil.load_all_images(filenames,controller)
+raw_image_stack = nfutil.load_all_images(configuration, filenames, controller)
 
 # %% ===========================================================================
 # PLOTTING - CAN BE EDITED
@@ -85,16 +86,17 @@ if configuration.output_plot_check:
     img_num = 50
     fig = plt.figure()
     plt.title('Raw Image: ' + str(img_num))
-    plt.imshow(raw_image_stack[img_num,:,:],interpolation='none',clim=[0, 50],cmap='bone')
+    plt.imshow(raw_image_stack[img_num, :, :],
+               interpolation='none', clim=[0, 50], cmap='bone')
     plt.show(block=False)
 # %% ===========================================================================
 # INTENSITY CHECK - DO NOT EDIT
 # ==============================================================================
 if configuration.output_plot_check:
-    summed_image_int = np.sum(np.sum(raw_image_stack,axis=1),axis=1)
+    summed_image_int = np.sum(np.sum(raw_image_stack, axis=1), axis=1)
     plt.figure()
-    plt.scatter(np.arange(0,np.shape(filenames)[0],1),summed_image_int)
-    plt.ylim(0,np.max(summed_image_int))
+    plt.scatter(np.arange(0, np.shape(filenames)[0], 1), summed_image_int)
+    plt.ylim(0, np.max(summed_image_int))
     plt.title('Image Intensity vs Image Number')
     plt.xlabel('Image Number')
     plt.ylabel('Summed Intensity')
@@ -103,23 +105,28 @@ if configuration.output_plot_check:
     # What is the median intensity, how many are well below that and what could be the expected confidence drop
     median_int = np.median(summed_image_int)
     num_bad_images = np.sum(summed_image_int < median_int*0.75)
-    print('There are potentially ' + str(num_bad_images) + ' images with poor intensity.')
-    print('Potential confidence maximum around ' + str(np.round(1 - num_bad_images/np.shape(filenames)[0],2)))
+    print('There are potentially ' + str(num_bad_images) +
+          ' images with poor intensity.')
+    print('Potential confidence maximum around ' +
+          str(np.round(1 - num_bad_images/np.shape(filenames)[0], 2)))
 
 # %% ===========================================================================
 # MEDIAN DARKFIELD REMOVAL - DO NOT EDIT
 # ==============================================================================
 # Perform median darkfield subtraction
-cleaned_image_stack = nfutil.remove_median_darkfields(raw_image_stack,controller,configuration)
+cleaned_image_stack = nfutil.remove_median_darkfields(
+    raw_image_stack, controller, configuration)
 
 # %% ===========================================================================
 # PLOTTING - CAN BE EDITED
 # ==============================================================================
 if configuration.output_plot_check:
-    fig, axs = plt.subplots(1,2)
+    fig, axs = plt.subplots(1, 2)
     img_num = 500
-    axs[0].imshow(raw_image_stack[img_num,:,:],interpolation='none',clim=[0, 50],cmap='bone')
-    axs[1].imshow(cleaned_image_stack[img_num,:,:],interpolation='none',clim=[0, 20],cmap='bone')
+    axs[0].imshow(raw_image_stack[img_num, :, :],
+                  interpolation='none', clim=[0, 50], cmap='bone')
+    axs[1].imshow(cleaned_image_stack[img_num, :, :],
+                  interpolation='none', clim=[0, 20], cmap='bone')
     axs[0].title.set_text('Raw Image: ' + str(img_num))
     axs[1].title.set_text('Cleaned Image: ' + str(img_num))
     plt.show(block=False)
@@ -127,16 +134,19 @@ if configuration.output_plot_check:
 # IMAGE CLEANING AND BINARIZATION - DO NOT EDIT
 # ==============================================================================
 # Perform image filtering, small object removal, and binarization
-binarized_image_stack = nfutil.filter_and_binarize_images(cleaned_image_stack,controller,configuration.images.processing.method)
+binarized_image_stack = nfutil.filter_and_binarize_images(
+    cleaned_image_stack, controller, configuration.images.processing.method)
 
 # %% ===========================================================================
 # PLOTTING - CAN BE EDITED
 # ==============================================================================
 if configuration.output_plot_check:
-    fig, axs = plt.subplots(1,2)
+    fig, axs = plt.subplots(1, 2)
     img_num = 1000
-    axs[0].imshow(raw_image_stack[img_num,:,:],interpolation='none',clim=[10, 50],cmap='bone')
-    axs[1].imshow(binarized_image_stack[img_num,:,:],interpolation='none',clim=[0, 1],cmap='bone')
+    axs[0].imshow(raw_image_stack[img_num, :, :],
+                  interpolation='none', clim=[10, 50], cmap='bone')
+    axs[1].imshow(binarized_image_stack[img_num, :, :],
+                  interpolation='none', clim=[0, 1], cmap='bone')
     axs[0].title.set_text('Cleaned Image: ' + str(img_num))
     axs[1].title.set_text('Binarized Image: ' + str(img_num))
     plt.show(block=False)
@@ -145,16 +155,19 @@ if configuration.output_plot_check:
 # OMEGA DILATION - DO NOT EDIT
 # =============================================================================
 # Dilate the image stack in omega
-dilated_image_stack = nfutil.dilate_image_stack(binarized_image_stack,configuration.images.processing.dilate_omega)
+dilated_image_stack = nfutil.dilate_image_stack(
+    binarized_image_stack, configuration.images.processing.dilate_omega)
 
 # %% ===========================================================================
 # PLOTTING - CAN BE EDITED
 # ==============================================================================
 if configuration.output_plot_check == True and configuration.images.processing.dilate_omega > 0:
-    fig, axs = plt.subplots(1,2)
+    fig, axs = plt.subplots(1, 2)
     img_num = 100
-    axs[0].imshow(binarized_image_stack[img_num,:,:],interpolation='none',clim=[0, 1],cmap='bone')
-    axs[1].imshow(dilated_image_stack[img_num,:,:],interpolation='none',clim=[0, 1],cmap='bone')
+    axs[0].imshow(binarized_image_stack[img_num, :, :],
+                  interpolation='none', clim=[0, 1], cmap='bone')
+    axs[1].imshow(dilated_image_stack[img_num, :, :],
+                  interpolation='none', clim=[0, 1], cmap='bone')
     axs[0].title.set_text('Binarized Image: ' + str(img_num))
     axs[1].title.set_text('Dilated Image: ' + str(img_num))
     plt.show(block=False)
@@ -162,8 +175,9 @@ if configuration.output_plot_check == True and configuration.images.processing.d
 # %% ==========================================================================
 # SAVING - DO NOT EDIT
 # =============================================================================
-print(f'Saving image stack and omega edges to: {configuration.output_directory}')
-nfutil.save_image_stack(configuration,dilated_image_stack,omega_edges_deg)
+print(
+    f'Saving image stack and omega edges to: {configuration.output_directory}')
+nfutil.save_image_stack(configuration, dilated_image_stack, omega_edges_deg)
 
 # %% ==========================================================================
 # MAKE A SCINTILATOR/BEAMSTOP MASK - DO NOT EDIT
@@ -175,14 +189,16 @@ binarization_threshold = 19.0
 errosions = 10
 dilations = 10
 feature_size_to_remove = 10000
-beamstop_mask = nfutil.make_beamstop_mask(raw_image_stack,num_img_for_median,binarization_threshold,errosions,dilations,feature_size_to_remove)
+beamstop_mask = nfutil.make_beamstop_mask(
+    raw_image_stack, num_img_for_median, binarization_threshold, errosions, dilations, feature_size_to_remove)
 
 plt.figure()
-plt.imshow(beamstop_mask,interpolation=None,clim=[0,1])
+plt.imshow(beamstop_mask, interpolation=None, clim=[0, 1])
 plt.show()
-# %% 
+# %%
 print(f'Saving beam stop mask to: {configuration.output_directory}')
-np.save(configuration.output_directory + os.sep + configuration.analysis_name + '_beamstop_mask.npy', beamstop_mask)
+np.save(configuration.output_directory + os.sep +
+        configuration.analysis_name + '_beamstop_mask.npy', beamstop_mask)
 
 
 # %%
