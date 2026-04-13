@@ -12,8 +12,16 @@ class TomographyConfig(Config):
         self._cfg = cfg
 
     @property
+    def data_folder(self):
+        return self._cfg.get('tomography:data_folder')
+
+    @property
     def img_stem(self):
         return self._cfg.get('tomography:img_stem')
+
+    @property
+    def filetype(self):
+        return self._cfg.get('tomography:filetype')
 
     @property
     def bright(self):
@@ -61,6 +69,10 @@ class BrightConfig(Config):
     def num_imgs(self):
         return self._cfg.get('tomography:bright:num_imgs', 10)
 
+    @property
+    def filename(self):
+        return self._cfg.get('tomography:bright:filename')
+
 
 class DarkConfig(Config):
 
@@ -76,26 +88,35 @@ class DarkConfig(Config):
     def num_imgs(self):
         return self._cfg.get('tomography:dark:num_imgs', 10)
 
+    @property
+    def filename(self):
+        return self._cfg.get('tomography:dark:filename')
+
 
 class TomoImagesConfig(Config):
 
     @property
     def img_start(self):
-        return self._cfg.get('tomography:images:img_start')
+        return self._cfg.get('tomography:tomo_images:img_start')
 
     @property
     def num_imgs(self):
-        return self._cfg.get('tomography:images:num_imgs')
+        return self._cfg.get('tomography:tomo_images:num_imgs')
 
     @property
     def folder(self):
-        return self._cfg.get('tomography:images:folder')
+        return self._cfg.get('tomography:tomo_images:folder')
+
+    @property
+    def filename(self):
+        return self._cfg.get('tomography:tomo_images:filename')
+
 
 class TomoProcessingConfig(Config):
 
     @property
     def recon_thresh(self):
-        return self._cfg.get('tomography:processing:recon_thresh',0.0003)
+        return self._cfg.get('tomography:processing:recon_thresh', 0.0003)
 
     @property
     def noise_obj_size(self):
@@ -131,3 +152,19 @@ class TomoReconstructionConfig(Config):
     @property
     def v_bnds(self):
         return self._cfg.get('tomography:reconstruction:v_bnds', [0.0, 0.0])
+
+    @property
+    def x_center(self):
+        return self._cfg.get('tomography:reconstruction:x_center', 0.)
+
+    @property
+    def z_center(self):
+        return self._cfg.get('tomography:reconstruction:z_center', 0.)
+
+    @property
+    def x_length(self):
+        return self._cfg.get('tomography:reconstruction:x_length', 0.)
+
+    @property
+    def z_length(self):
+        return self._cfg.get('tomography:reconstruction:z_length', 0.)
